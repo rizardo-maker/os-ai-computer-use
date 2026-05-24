@@ -16,8 +16,6 @@ dependencies = [
   "pyperclip>=1.8",
   # internal packages
   "os_ai_llm>=0.1.0",
-  "os_ai_llm_anthropic>=0.1.0",
-  "os_ai_llm_openai>=0.1.0",
   "os_ai_os>=0.1.0",
   # macOS drivers are only needed on Darwin; keep direct dep for mono repo dev
   "os_ai_os_macos>=0.1.0; platform_system == \"Darwin\"",

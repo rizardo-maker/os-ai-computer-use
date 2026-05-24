@@ -1,0 +1,21 @@
+[project]
+name = "os_ai_mcp"
+version = "0.1.0"
+description = "MCP client adapters for OS AI"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3",
+]
+
+dependencies = [
+  "mcp>=1.27.1,<2.0.0",
+  "os_ai_core>=0.1.0",
+  "os_ai_llm>=0.1.0",
+]
+
+[project.scripts]
+os-ai-mcp-server = "os_ai_mcp.server.os_ai_server:main"
+
+[tool.uv]
+package = true

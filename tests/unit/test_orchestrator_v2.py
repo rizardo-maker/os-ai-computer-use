@@ -46,3 +46,42 @@ def test_orchestrator_runs_and_handles_tool_call(monkeypatch):
     assert any(m.role == "assistant" for m in msgs)
     assert client.calls >= 2
 
+
+def test_orchestrator_can_use_legacy_runner_rollback_path(monkeypatch):
+    captured_args = {}
+    reg = ToolRegistry()
+
+    def handler(args):
+        captured_args.update(args)
+        return [{"type": "text", "text": "ok"}]
+
+    reg.register("computer", handler)
+
+    class BatchLLM(DummyLLM):
+        def generate(self, messages, tools, system=None, tool_choice="auto", max_tokens=1024, allow_parallel_tools=True, provider_context=None):
+            self.calls += 1
+            if self.calls == 1:
+                return LLMResponse(
+                    messages=[],
+                    tool_calls=[
+                        ToolCall(
+                            id="1",
+                            name="computer",
+                            args={"action": "screenshot"},
+                            metadata={
+                                "_openai_batch": True,
+                                "_openai_actions": [{"action": "screenshot"}],
+                            },
+                        )
+                    ],
+                    usage=Usage(input_tokens=1, output_tokens=1),
+                )
+            return LLMResponse(messages=[], tool_calls=[], usage=Usage(input_tokens=1, output_tokens=1))
+
+    monkeypatch.setenv("OS_AI_USE_APPLICATION_RUNNER", "0")
+    orch = Orchestrator(BatchLLM(), reg)
+
+    orch.run("task", [ToolDescriptor(name="computer", kind="computer_use")], system=None, max_iterations=2)
+
+    assert captured_args["_openai_batch"] is True
+    assert captured_args["_openai_actions"] == [{"action": "screenshot"}]

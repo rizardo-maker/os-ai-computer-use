@@ -11,6 +11,9 @@ classifiers = [
 # CLI depends on core to run orchestrator
 dependencies = [
   "os_ai_core>=0.1.0",
+  "os_ai_llm_anthropic>=0.1.0",
+  "os_ai_llm_openai>=0.1.0",
+  "os_ai_mcp>=0.1.0",
 ]
 
 [project.scripts]

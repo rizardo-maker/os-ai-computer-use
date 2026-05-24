@@ -15,6 +15,7 @@ PKG_SRC_DIRS = [
     os.path.join(PROJECT_ROOT, "packages", "llm", "src"),
     os.path.join(PROJECT_ROOT, "packages", "llm_anthropic", "src"),
     os.path.join(PROJECT_ROOT, "packages", "llm_openai", "src"),
+    os.path.join(PROJECT_ROOT, "packages", "mcp", "src"),
     os.path.join(PROJECT_ROOT, "packages", "os", "src"),
     os.path.join(PROJECT_ROOT, "packages", "os-macos", "src"),
     os.path.join(PROJECT_ROOT, "packages", "os-linux", "src"),
@@ -33,5 +34,4 @@ def pytest_collection_modifyitems(session, config, items):
     for item in items:
         if "/tests/integration/" in str(getattr(item, "fspath", "")):
             item.add_marker("integration")
-
 

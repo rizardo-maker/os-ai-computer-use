@@ -8,6 +8,7 @@ members = [
   "packages/llm",
   "packages/llm_anthropic",
   "packages/llm_openai",
+  "packages/mcp",
 ]
 
 [tool.uv]

@@ -19,6 +19,9 @@ dependencies = [
 
   # Internal packages
   "os_ai_core>=0.1.0",
+  "os_ai_llm_anthropic>=0.1.0",
+  "os_ai_llm_openai>=0.1.0",
+  "os_ai_mcp>=0.1.0",
 ]
 
 [project.scripts]
@@ -26,5 +29,4 @@ os-ai-backend = "os_ai_backend.app:main"
 
 [tool.uv]
 package = true
-
 

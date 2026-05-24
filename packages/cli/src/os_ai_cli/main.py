@@ -1,16 +1,18 @@
 import sys
 import argparse
-import logging
+import os
 
+from os_ai_core.adapters.llm.legacy_gateway import LegacyLLMGateway
+from os_ai_core.adapters.tools.computer_specs import build_computer_tool_descriptor
+from os_ai_core.application.services.prompt_builder import PromptBuilder
+from os_ai_core.application.use_cases.run_agent import RunAgentCommand, RunAgentUseCase
 from os_ai_core.di import create_container
 from os_ai_core.utils.logger import setup_logging
-from os_ai_llm.types import ToolDescriptor
 
 from os_ai_core.orchestrator import Orchestrator
+from os_ai_cli.events import CliEventSink
 
 import pyautogui
-
-from os_ai_llm.config import COMPUTER_TOOL_TYPES as _COMPUTER_TOOL_TYPES
 
 
 def main() -> int:
@@ -30,59 +32,46 @@ def main() -> int:
         print("Введите задачу:")
         task_text = sys.stdin.readline().strip()
 
-    provider = args.provider  # None if not specified → di.py uses LLM_PROVIDER from env/config
+    provider = args.provider  # None if not specified -> di.py uses LLM_PROVIDER from env/config
     inj = create_container(provider)
     from os_ai_llm.interfaces import LLMClient
+    from os_ai_core.adapters.tools.composite_tool_gateway import CompositeToolGateway
     from os_ai_core.tools.registry import ToolRegistry
     client = inj.get(LLMClient)
     tools = inj.get(ToolRegistry)
-    orch = Orchestrator(client, tools)
+    tool_gateway = inj.get(CompositeToolGateway)
+    orch = Orchestrator(client, tools, tool_gateway=tool_gateway)
 
     # Resolve actual provider for tool type lookup
     actual_provider = provider or client.get_provider_name()
-
-    screen_w, screen_h = pyautogui.size()
-    tool_type = _COMPUTER_TOOL_TYPES.get(actual_provider, "computer_20250124")
-    tool_descs = [
-        ToolDescriptor(
-            name="computer",
-            kind="computer_use",
-            params={
-                "type": tool_type,
-                "display_width_px": screen_w,
-                "display_height_px": screen_h,
-            },
-        )
-    ]
-    import platform
-    os_name = platform.system()
-    if os_name == "Darwin":
-        os_version = platform.mac_ver()[0]
-    elif os_name == "Linux":
-        os_version = platform.release()
-    else:
-        os_version = platform.version()
-    os_label = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}.get(os_name, os_name)
-    is_mac = os_name == "Darwin"
-    mod_key = "cmd" if is_mac else "ctrl"
-    shortcut_examples = f"'{mod_key}+space', '{mod_key}+c'"
-
-    system_prompt = (
-        f"You are an expert desktop operator on {os_label} {os_version}. "
-        "Use the computer tool to complete the user's task. "
-        "Always complete the task fully — do NOT stop halfway to ask unnecessary questions. "
-        "Only ask the user if you hit a genuine dead-end or need credentials/permissions. "
-        "ONLY take a screenshot when needed. Prefer keyboard shortcuts. "
-        f"NEVER send empty key combos; always include a valid key or hotkey like {shortcut_examples}. "
-        f"When using key/hold_key, provide 'key' or 'keys' as a non-empty string (e.g., {shortcut_examples}). "
-        "For any action with coordinates, set coordinate_space='auto' in tool input."
-    )
+    tool_descs = [build_computer_tool_descriptor(actual_provider)]
+    system_prompt = PromptBuilder().build_desktop_operator_prompt()
+    total_in = 0
+    total_out = 0
 
     try:
-        msgs = orch.run(task_text, tool_descs, system_prompt, max_iterations=30)
+        if _application_runner_enabled():
+            run_result = RunAgentUseCase(
+                llm=LegacyLLMGateway(client),
+                tools=tool_gateway,
+                events=CliEventSink(),
+            ).execute(
+                RunAgentCommand(
+                    job_id="cli-run",
+                    task=task_text,
+                    tool_descriptors=tool_descs,
+                    system_prompt=system_prompt,
+                    max_iterations=30,
+                )
+            )
+            msgs = run_result.messages
+            total_in = run_result.input_tokens
+            total_out = run_result.output_tokens
+        else:
+            msgs = orch.run(task_text, tool_descs, system_prompt, max_iterations=30)
+            total_in = getattr(orch, 'total_input_tokens', 0)
+            total_out = getattr(orch, 'total_output_tokens', 0)
     except KeyboardInterrupt:
-        total_in = getattr(orch, 'total_input_tokens', 0)
-        total_out = getattr(orch, 'total_output_tokens', 0)
         try:
             from os_ai_core.utils.costs import estimate_cost
             model_name = client.get_model_name()
@@ -105,8 +94,6 @@ def main() -> int:
         print("\n".join(final_texts).strip())
 
     try:
-        total_in = getattr(orch, 'total_input_tokens', 0)
-        total_out = getattr(orch, 'total_output_tokens', 0)
         from os_ai_core.utils.costs import estimate_cost
         model_name = client.get_model_name()
         in_cost, out_cost, total_cost, _tier = estimate_cost(model_name, int(total_in), int(total_out))
@@ -115,6 +102,10 @@ def main() -> int:
         pass
 
     return 0
+
+
+def _application_runner_enabled() -> bool:
+    return os.environ.get("OS_AI_USE_APPLICATION_RUNNER", "1").lower() not in {"0", "false", "no", "off"}
 
 
 if __name__ == "__main__":

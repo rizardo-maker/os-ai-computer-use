@@ -73,7 +73,7 @@ class AnthropicClient(LLMClient):
                         "type": "image",
                         "source": {"type": "base64", "media_type": p.media_type, "data": p.data_base64},
                     })
-                # ProviderPart from other providers — silently skip
+                # ProviderPart from other providers - silently skip
             out.append({"role": m.role, "content": blocks})
         return out
 
@@ -89,7 +89,15 @@ class AnthropicClient(LLMClient):
                     "display_height_px": params.get("display_height_px"),
                 })
             else:
-                out.append({"type": "tool", "name": t.name})
+                schema = t.params.get("input_schema") or t.params.get("parameters") or {
+                    "type": "object",
+                    "properties": {},
+                }
+                out.append({
+                    "name": t.name,
+                    "description": str(t.params.get("description", "")),
+                    "input_schema": schema,
+                })
         return out
 
     def _parse_tool_calls(self, content: Any) -> List[ToolCall]:
@@ -197,7 +205,7 @@ class AnthropicClient(LLMClient):
         if resp is None and last_err is not None:
             raise last_err
 
-        # Convert assistant message content — use ProviderPart instead of text markers
+        # Convert assistant message content - use ProviderPart instead of text markers
         assistant_texts: List[str] = []
         tool_use_blocks: List[Dict[str, Any]] = []
         for b in resp.content:

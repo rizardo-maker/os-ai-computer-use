@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 import uuid
 from typing import Any, Dict, Optional
@@ -14,18 +15,22 @@ try:
 except Exception:  # pragma: no cover - fallback if orjson not available
     import json  # type: ignore
 
-from os_ai_llm.types import ToolDescriptor
 from os_ai_core.orchestrator import Orchestrator, CancelToken
 
 from os_ai_llm.interfaces import LLMClient
+from os_ai_core.adapters.llm.legacy_gateway import LegacyLLMGateway
+from os_ai_core.adapters.tools.composite_tool_gateway import CompositeToolGateway
+from os_ai_core.adapters.tools.computer_specs import build_computer_tool_descriptor
+from os_ai_core.adapters.tools.local_computer_provider import LocalComputerToolProvider
+from os_ai_core.application.services.prompt_builder import DesktopPromptContext, PromptBuilder
+from os_ai_core.application.use_cases.run_agent import RunAgentCommand, RunAgentUseCase
 from os_ai_core.tools.registry import ToolRegistry
 
-import pyautogui
-
-from os_ai_llm.config import COMPUTER_TOOL_TYPES as _COMPUTER_TOOL_TYPES, LLM_PROVIDER as _DEFAULT_PROVIDER
+from os_ai_llm.config import LLM_PROVIDER as _DEFAULT_PROVIDER
+from .ws_event_sink import WebSocketEventSink
 _PROVIDER_DISPLAY = {"anthropic": "Anthropic", "openai": "OpenAI"}
 
-# pyautogui не является thread-safe — только один agent.run одновременно.
+# pyautogui не является thread-safe - только один agent.run одновременно.
 _agent_run_lock = threading.Lock()
 from .jobs import jobs, Job
 from .metrics import metrics
@@ -92,7 +97,9 @@ class WebSocketRPCHandler:
                     provider = params.get("provider")
                     provider_display = _PROVIDER_DISPLAY.get(provider or _DEFAULT_PROVIDER, (provider or _DEFAULT_PROVIDER).title())
                     try:
-                        session_id, client, tools = self._create_session(provider, api_key=get_api_key(provider))
+                        session_id, client, tools, tool_gateway = self._normalize_session(
+                            self._create_session(provider, api_key=get_api_key(provider))
+                        )
                         self._logger.info("session.create -> %s (provider=%s)", session_id, provider or "default")
                         await self._send_result(websocket, req_id, {
                             "sessionId": session_id,
@@ -119,7 +126,9 @@ class WebSocketRPCHandler:
 
                     # Build session and run orchestration in background
                     try:
-                        session_id, client, tools = self._create_session(provider, api_key=get_api_key(provider))
+                        session_id, client, tools, tool_gateway = self._normalize_session(
+                            self._create_session(provider, api_key=get_api_key(provider))
+                        )
                     except RuntimeError as e:
                         self._logger.warning(
                             "agent.run failed (provider=%s): %s",
@@ -142,6 +151,7 @@ class WebSocketRPCHandler:
                         job_id=job_id,
                         client=client,
                         tools=tools,
+                        tool_gateway=tool_gateway,
                         task_text=task_text,
                         max_iterations=max_iterations,
                         cancel=cancel_token,
@@ -177,6 +187,7 @@ class WebSocketRPCHandler:
         job_id: str,
         client: LLMClient,
         tools: ToolRegistry,
+        tool_gateway: CompositeToolGateway,
         task_text: str,
         max_iterations: int,
         cancel: CancelToken,
@@ -186,67 +197,14 @@ class WebSocketRPCHandler:
         previous_response_id: str | None = None,
     ) -> None:
         _provider = provider or _DEFAULT_PROVIDER
-        screen_w, screen_h = pyautogui.size()
-        tool_descs = [
-            ToolDescriptor(
-                name="computer",
-                kind="computer_use",
-                params={
-                    "type": _COMPUTER_TOOL_TYPES.get(_provider, "computer_20250124"),
-                    "display_width_px": screen_w,
-                    "display_height_px": screen_h,
-                },
-            )
-        ]
-        import platform
-        os_name = platform.system()
-        if os_name == "Darwin":
-            os_version = platform.mac_ver()[0]
-        elif os_name == "Linux":
-            os_version = platform.release()
-        else:
-            os_version = platform.version()
-        os_label = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}.get(os_name, os_name)
-        is_mac = os_name == "Darwin"
-        mod_key = "cmd" if is_mac else "ctrl"
-        shortcut_examples = f"'{mod_key}+space', '{mod_key}+c'"
-
-        system_prompt = (
-            f"You are an expert desktop operator on {os_label} {os_version}. "
-            "When the user asks you to DO something (draw, click, type, open, navigate, etc.), "
-            "use the computer tool immediately — do not describe what you would do, just act. "
-            "When the user asks a question or wants information, answer in text normally. "
-            "Always complete tasks fully — do NOT stop halfway to ask unnecessary questions. "
-            "Only ask the user if you hit a genuine dead-end or need credentials/permissions. "
-            "When drawing or dragging, pay attention to the visible canvas/window boundaries in the screenshot — "
-            "keep all coordinates within the actual drawing area, not the full screen. "
-            "ONLY take a screenshot when needed. Prefer keyboard shortcuts. "
-            f"NEVER send empty key combos; always include a valid key or hotkey like {shortcut_examples}. "
-            f"When using key/hold_key, provide 'key' or 'keys' as a non-empty string (e.g., {shortcut_examples}). "
-            "For any action with coordinates, set coordinate_space='auto' in tool input."
+        tool_descs = [build_computer_tool_descriptor(_provider)]
+        system_prompt = PromptBuilder().build_desktop_operator_prompt(
+            DesktopPromptContext(action_first=True)
         )
 
-        orch = Orchestrator(client, tools)
         loop = asyncio.get_running_loop()
 
-        def on_event(kind: str, payload: Dict[str, Any]) -> None:
-            try:
-                # Map orchestrator events to WS notifications
-                if kind == "assistant_text":
-                    # as log for now
-                    asyncio.run_coroutine_threadsafe(self._send_event(websocket, "event.log", {"level": "info", "message": payload.get("text", ""), "jobId": job_id}), loop)
-                elif kind == "tool_call":
-                    asyncio.run_coroutine_threadsafe(self._send_event(websocket, "event.action", {"name": payload.get("name"), "status": "start", "meta": payload.get("args", {}), "jobId": job_id}), loop)
-                elif kind == "tool_result_text":
-                    asyncio.run_coroutine_threadsafe(self._send_event(websocket, "event.action", {"name": "tool_result", "status": "ok", "meta": payload, "jobId": job_id}), loop)
-                elif kind == "tool_result_image":
-                    asyncio.run_coroutine_threadsafe(self._send_event(websocket, "event.screenshot", {"mime": payload.get("media_type", "image/jpeg"), "data": payload.get("data", ""), "ts": None, "jobId": job_id}), loop)
-                elif kind == "progress":
-                    asyncio.run_coroutine_threadsafe(self._send_event(websocket, "event.progress", {**payload, "jobId": job_id}), loop)
-                elif kind == "usage":
-                    asyncio.run_coroutine_threadsafe(self._send_event(websocket, "event.usage", {**payload, "jobId": job_id}), loop)
-            except Exception as e:
-                self._logger.debug("Error in on_event %s: %s", kind, e)
+        event_sink = WebSocketEventSink(websocket, loop, job_id, self._send_event)
 
         def _blocking_run() -> Dict[str, Any]:
             # Convert initial context from wire into Message[] if provided
@@ -289,9 +247,44 @@ class WebSocketRPCHandler:
             if previous_response_id:
                 init_ctx = {"previous_response_id": previous_response_id}
 
-            # Run orchestrator with auth error handling
+            # Run application runner by default. Keep legacy facade as explicit rollback.
             try:
-                messages = orch.run(task_text, tool_descs, system_prompt, max_iterations=max_iterations, cancel_token=cancel, on_event=on_event, initial_messages=base_msgs, initial_provider_context=init_ctx)
+                if _application_runner_enabled():
+                    run_result = RunAgentUseCase(
+                        llm=LegacyLLMGateway(client),
+                        tools=tool_gateway,
+                        events=event_sink,
+                    ).execute(
+                        RunAgentCommand(
+                            job_id=job_id,
+                            task=task_text,
+                            tool_descriptors=tool_descs,
+                            system_prompt=system_prompt,
+                            max_iterations=max_iterations,
+                            cancel_token=cancel,
+                            initial_messages=base_msgs,
+                            initial_provider_context=init_ctx,
+                        )
+                    )
+                    messages = run_result.messages
+                    input_tokens = run_result.input_tokens
+                    output_tokens = run_result.output_tokens
+                    provider_context = run_result.provider_context
+                else:
+                    orch = Orchestrator(client, tools, tool_gateway=tool_gateway, use_application_runner=False)
+                    messages = orch.run(
+                        task_text,
+                        tool_descs,
+                        system_prompt,
+                        max_iterations=max_iterations,
+                        cancel_token=cancel,
+                        on_event=event_sink.emit_legacy,
+                        initial_messages=base_msgs,
+                        initial_provider_context=init_ctx,
+                    )
+                    input_tokens = int(getattr(orch, "total_input_tokens", 0) or 0)
+                    output_tokens = int(getattr(orch, "total_output_tokens", 0) or 0)
+                    provider_context = orch.last_provider_context
             except httpx.HTTPStatusError as e:
                 # Check for authentication/authorization errors
                 if e.response.status_code in (401, 403):
@@ -315,11 +308,11 @@ class WebSocketRPCHandler:
             return {
                 "text": "\n".join(final_texts).strip(),
                 "usage": {
-                    "input_tokens": int(getattr(orch, "total_input_tokens", 0) or 0),
-                    "output_tokens": int(getattr(orch, "total_output_tokens", 0) or 0),
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                 },
                 "status": "ok",
-                "provider_context": orch.last_provider_context,
+                "provider_context": provider_context,
             }
 
         def _locked_blocking_run():
@@ -339,12 +332,22 @@ class WebSocketRPCHandler:
         await self._send_event(websocket, "event.final", {"jobId": job_id, **result})
         self._logger.info("agent.run completed job=%s status=%s", job_id, result.get("status"))
 
-    def _create_session(self, provider: Optional[str], api_key: Optional[str] = None) -> tuple[str, LLMClient, ToolRegistry]:
+    def _create_session(self, provider: Optional[str], api_key: Optional[str] = None) -> tuple[str, LLMClient, ToolRegistry, CompositeToolGateway]:
         inj = _create_container(provider, api_key=api_key)
         client = inj.get(LLMClient)
         tools = inj.get(ToolRegistry)
+        try:
+            tool_gateway = inj.get(CompositeToolGateway)
+        except Exception:
+            tool_gateway = CompositeToolGateway([LocalComputerToolProvider(tools)])
         session_id = str(uuid.uuid4())
-        return session_id, client, tools
+        return session_id, client, tools, tool_gateway
+
+    def _normalize_session(self, session: tuple) -> tuple[str, LLMClient, ToolRegistry, CompositeToolGateway]:
+        if len(session) == 4:
+            return session  # type: ignore[return-value]
+        session_id, client, tools = session
+        return session_id, client, tools, CompositeToolGateway([LocalComputerToolProvider(tools)])
 
     async def _send_result(self, websocket: WebSocket, req_id: Any, result: Dict[str, Any]) -> None:
         payload = {"jsonrpc": "2.0", "id": req_id, "result": result}
@@ -376,3 +379,6 @@ def _create_container(provider: Optional[str] = None, api_key: Optional[str] = N
     from os_ai_core.di import create_container as _cc  # type: ignore
     return _cc(provider, api_key=api_key)
 
+
+def _application_runner_enabled() -> bool:
+    return os.environ.get("OS_AI_USE_APPLICATION_RUNNER", "1").lower() not in {"0", "false", "no", "off"}

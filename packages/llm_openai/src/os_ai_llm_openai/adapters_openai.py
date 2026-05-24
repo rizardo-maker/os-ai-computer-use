@@ -186,6 +186,21 @@ class OpenAIClient(LLMClient):
                     },
                 ))
 
+            elif item_type == "function_call":
+                call_id = getattr(item, "call_id", "") or getattr(item, "id", "")
+                name = getattr(item, "name", "")
+                arguments_raw = getattr(item, "arguments", "{}") or "{}"
+                try:
+                    args = json.loads(arguments_raw) if isinstance(arguments_raw, str) else dict(arguments_raw)
+                except Exception:
+                    args = {}
+                tool_calls.append(ToolCall(
+                    id=call_id,
+                    name=name,
+                    args=args,
+                    metadata={"provider_tool_type": "function"},
+                ))
+
             elif item_type == "reasoning":
                 for s in (getattr(item, "summary", None) or []):
                     text = getattr(s, "text", "")
@@ -253,6 +268,19 @@ class OpenAIClient(LLMClient):
         for t in tools:
             if t.kind == "computer_use":
                 provider_tools.append({"type": "computer"})
+            elif t.kind == "function":
+                schema = t.params.get("input_schema") or t.params.get("parameters") or {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": True,
+                }
+                provider_tools.append({
+                    "type": "function",
+                    "name": t.name,
+                    "description": str(t.params.get("description", "")),
+                    "parameters": schema,
+                    "strict": False,
+                })
 
         previous_response_id = None
         if provider_context:
@@ -264,7 +292,7 @@ class OpenAIClient(LLMClient):
             input_data = self._build_initial_input(messages, system)
 
         if not input_data:
-            logger.warning("OpenAI input_data is empty — this likely indicates a bug in message building. "
+            logger.warning("OpenAI input_data is empty - this likely indicates a bug in message building. "
                            "Messages count: %d, previous_response_id: %s", len(messages), previous_response_id)
             input_data = [{"role": "user", "content": [{"type": "input_text", "text": "Continue."}]}]
 
@@ -276,7 +304,7 @@ class OpenAIClient(LLMClient):
 
         if previous_response_id:
             kwargs["previous_response_id"] = previous_response_id
-        # Instructions do NOT carry over with previous_response_id — must re-send every time
+        # Instructions do NOT carry over with previous_response_id - must re-send every time
         if system:
             kwargs["instructions"] = system
         if self._model.startswith("gpt-5"):
@@ -330,6 +358,21 @@ class OpenAIClient(LLMClient):
         """Format tool result as OpenAI computer_call_output."""
         logger = logging.getLogger(LOGGER_NAME)
 
+        if result.metadata.get("provider_tool_type") == "function":
+            output = self._tool_result_to_text(result)
+            return Message(
+                role="user",
+                content=[ProviderPart(
+                    provider="openai",
+                    sub_type="function_call_output",
+                    data={
+                        "type": "function_call_output",
+                        "call_id": result.tool_call_id,
+                        "output": output,
+                    },
+                )],
+            )
+
         screenshot_b64 = ""
         media_type = "image/png"
 
@@ -339,7 +382,7 @@ class OpenAIClient(LLMClient):
                 media_type = p.media_type
 
         if not screenshot_b64:
-            logger.warning("No screenshot in tool result — OpenAI requires one. Check tool handler.")
+            logger.warning("No screenshot in tool result - OpenAI requires one. Check tool handler.")
 
         output_item: Dict[str, Any] = {
             "type": "computer_call_output",
@@ -365,3 +408,15 @@ class OpenAIClient(LLMClient):
                 data=output_item,
             )],
         )
+
+    @staticmethod
+    def _tool_result_to_text(result: ToolResult) -> str:
+        parts: List[str] = []
+        for part in result.content:
+            if isinstance(part, TextPart):
+                parts.append(part.text)
+            elif isinstance(part, ImagePart):
+                parts.append(f"[image:{part.media_type};base64,{part.data_base64}]")
+        if not parts:
+            return "success" if not result.is_error else "error"
+        return "\n".join(parts)

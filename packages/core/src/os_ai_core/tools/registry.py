@@ -12,6 +12,9 @@ class ToolRegistry:
     def register(self, name: str, handler: Callable[..., List[Dict[str, Any]]]) -> None:
         self._handlers[name] = handler
 
+    def names(self) -> set[str]:
+        return set(self._handlers)
+
     def execute(self, call: ToolCall, cancel_token: Optional[Any] = None) -> ToolResult:
         handler = self._handlers.get(call.name)
         if not handler:
@@ -21,8 +24,7 @@ class ToolRegistry:
                 is_error=True,
             )
 
-        # Merge metadata into args so batch handler can access _openai_batch, _openai_actions
-        merged_args = {**call.args, **call.metadata} if call.metadata else dict(call.args)
+        merged_args = dict(call.args)
 
         # Inject cancel_token so handlers can check for cancellation
         if cancel_token is not None:
