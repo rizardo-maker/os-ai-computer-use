@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   push:
     branches: [ main, master ]
   pull_request:
@@ -82,4 +82,3 @@ jobs:
         run: cd frontend_flutter && flutter analyze --no-fatal-infos || true
       - name: Run Flutter tests
         run: cd frontend_flutter && flutter test
-
