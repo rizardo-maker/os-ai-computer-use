@@ -167,240 +167,275 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   void _onWs(Map<String, dynamic> m) {
-    if (kDebugMode) {
-      // ignore: avoid_print
-      final label =
-          m['method']?.toString() ?? 'resp id=${m['id'] ?? 'unknown'}';
-      print('[Repo] WS <- $label');
-    }
-    // Track last message time to stabilize effective connection status
+    _debugWsMessage(m);
     _emitEffectiveStatus();
     _completePendingRpc(m);
-    if (m.containsKey('method')) {
-      final method = m['method'] as String;
-      if (method == 'event.log') {
-        final p = m['params'] as Map<String, dynamic>;
-        final msg = (p['message'] as String?) ?? '';
-        if (kDebugMode) {
-          // ignore: avoid_print
-          print('[Repo] event.log: $msg');
-        }
-        // Если это tool_result ок, рисуем галочку
-        if (msg.startsWith('done:') ||
-            msg.startsWith('ok') ||
-            msg.toLowerCase().contains('tool_result')) {
-          final lastAction = _lastActionNameFromQueue();
-          _msgCtrl.add(ChatMessage(
-            id: _nextId(),
-            role: 'assistant',
-            ts: DateTime.now(),
-            kind: 'action',
-            text: '✔ ${lastAction ?? 'ok'}',
-            meta: {'name': lastAction ?? 'ok', 'status': 'ok'},
-          ));
-          return;
-        }
-        final cmThought = ChatMessage(
-          id: _nextId(),
-          role: 'assistant',
-          ts: DateTime.now(),
-          kind: 'thought',
-          text: msg.isEmpty ? null : msg,
-        );
-        _msgCtrl.add(cmThought);
-        _recordHistory(cmThought,
-            chatId: _jobChat[_currentJobId ?? ''] ?? _activeChatId);
-      } else if (method == 'event.screenshot') {
-        final p = m['params'] as Map<String, dynamic>;
-        if (kDebugMode) {
-          // ignore: avoid_print
-          final len = (p['data'] as String?)?.length ?? 0;
-          print('[Repo] event.screenshot len=$len');
-        }
-        _msgCtrl.add(ChatMessage(
-          id: _nextId(),
-          role: 'assistant',
-          ts: DateTime.now(),
-          kind: 'screenshot',
-          imageBase64: p['data'] as String?,
-        ));
-      } else if (method == 'event.action') {
-        final p = m['params'] as Map<String, dynamic>;
-        final name = p['name'] as String?;
-        final status = p['status'] as String?;
-        final meta = (p['meta'] as Map?)?.cast<String, dynamic>();
-        if (_handleApprovalToolResult(p, name, meta)) {
-          return;
-        }
-        if (kDebugMode) {
-          // ignore: avoid_print
-          print('[Repo] event.action: ${name ?? ''} [${status ?? ''}]');
-        }
-        _rememberActionName(meta, name);
-        final cmAction = ChatMessage(
-          id: _nextId(),
-          role: 'assistant',
-          ts: DateTime.now(),
-          kind: 'action',
-          text: _formatActionText(name, status, meta),
-          meta: {'name': name, 'status': status, 'meta': meta},
-        );
-        _msgCtrl.add(cmAction);
-      } else if (method == 'event.approval') {
-        final p = m['params'] as Map<String, dynamic>;
-        final summary = (p['summary'] as String?) ?? 'Tool approval required';
-        final tool = (p['tool'] as Map?)?.cast<String, dynamic>() ??
-            const <String, dynamic>{};
-        _msgCtrl.add(ChatMessage(
-          id: _nextId(),
-          role: 'system',
-          ts: DateTime.now(),
-          kind: 'approval',
-          text: summary,
-          meta: {
-            'jobId': p['jobId']?.toString() ?? '',
-            'approvalId': p['approvalId']?.toString() ?? '',
-            'risk': p['risk']?.toString() ?? '',
-            'toolName': tool['name']?.toString() ?? '',
-            'toolArgs': tool['args'],
-            'expiresInSeconds': p['expiresInSeconds'],
-          },
-        ));
-      } else if (method == 'event.progress') {
-        final p = m['params'] as Map<String, dynamic>;
-        final stage = (p['stage'] as String? ?? '').toLowerCase();
-        if (stage == 'cancelled') {
-          _runningCtrl.add(false);
-          // remove the Thinking... bubble
-          _thinkingMsgId = null;
-        }
-      } else if (method == 'event.usage') {
-        final p = m['params'] as Map<String, dynamic>;
-        final inTok = (p['input_tokens'] as num? ?? 0).toInt();
-        final outTok = (p['output_tokens'] as num? ?? 0).toInt();
-        // Use pre-computed cost from backend (provider-aware) if available, fallback to local rates
-        final inputUsd = (p['input_cost'] as num?)?.toDouble() ??
-            CostRates.inputUsdFor(inTok);
-        final outputUsd = (p['output_cost'] as num?)?.toDouble() ??
-            CostRates.outputUsdFor(outTok);
-        if (kDebugMode) {
-          // ignore: avoid_print
-          print('[Repo] event.usage in=$inTok out=$outTok');
-        }
-        final u = CostUsage(
-          inputTokens: inTok,
-          outputTokens: outTok,
-          inputUsd: inputUsd,
-          outputUsd: outputUsd,
-        );
-        _usageCtrl.add(u);
-        final cmUsage = ChatMessage(
-          id: _nextId(),
-          role: 'assistant',
-          ts: DateTime.now(),
-          kind: 'usage',
-          text:
-              'in=$inTok out=$outTok  cost=\$${u.totalUsd.toStringAsFixed(6)} '
-              '(input=\$${u.inputUsd.toStringAsFixed(6)}, '
-              'output=\$${u.outputUsd.toStringAsFixed(6)})',
-          meta: {
-            'inputTokens': inTok,
-            'outputTokens': outTok,
-            'inputUsd': u.inputUsd,
-            'outputUsd': u.outputUsd,
-            'totalUsd': u.totalUsd,
-            if (_activeChatId != null) 'chatId': _activeChatId,
-          },
-        );
-        _msgCtrl.add(cmUsage);
-      } else if (method == 'event.final') {
-        final p = m['params'] as Map<String, dynamic>;
-        final status = p['status'] as String?;
-        final error = p['error'] as String?;
-        final jobId = p['jobId']?.toString();
-        if (kDebugMode) {
-          // ignore: avoid_print
-          print('[Repo] event.final status=$status');
-        }
-        // Show error message if job failed
-        if (status == 'fail' && error != null && error.isNotEmpty) {
-          _msgCtrl.add(ChatMessage(
-            id: _nextId(),
-            role: 'system',
-            ts: DateTime.now(),
-            kind: 'system',
-            text: error,
-            meta: const {'isError': true},
-          ));
-        }
-        if (jobId != null && jobId.isNotEmpty) {
-          _emitRemoveApprovalsForJob(jobId);
-        }
-        // remove the Thinking... bubble when job finishes
-        if (_thinkingMsgId != null) {
-          _msgCtrl.add(ChatMessage(
-            id: _nextId(),
-            role: 'assistant',
-            ts: DateTime.now(),
-            kind: 'control',
-            text: null,
-            meta: {'removeMessageId': _thinkingMsgId},
-          ));
-          _thinkingMsgId = null;
-        }
-        // Save provider_context (e.g. previous_response_id) for session resume
-        final provCtx = p['provider_context'];
-        if (provCtx is Map) {
-          final respId = provCtx['previous_response_id']?.toString();
-          final chatId = _jobChat[_currentJobId ?? ''] ?? _activeChatId;
-          if (respId != null && respId.isNotEmpty && chatId != null) {
-            _lastResponseIdByChat[chatId] = respId;
-          }
-        }
-        if (_currentJobId != null) {
-          _jobChat.remove(_currentJobId);
-          _currentJobId = null;
-        }
-        _runningCtrl.add(false);
-      }
+
+    final method = m['method'];
+    if (method is String) {
+      _handleWsEvent(method, m['params']);
       return;
     }
-    // Handle responses by id if needed
-    try {
-      final respId = (m['id']?.toString());
-      if (respId != null) {
-        final chatId = _pendingJobs.remove(respId);
-        if (chatId != null) {
-          final res = m['result'];
-          if (res is Map) {
-            final jobId = res['jobId']?.toString();
-            if (jobId != null && jobId.isNotEmpty) {
-              _jobChat[jobId] = chatId;
-              // Update _currentJobId with the real jobId (UUID) from backend
-              if (respId == _currentJobId) {
-                _currentJobId = jobId;
-                if (kDebugMode) {
-                  // ignore: avoid_print
-                  print(
-                      '[Repo] Updated _currentJobId from reqId=$respId to jobId=$jobId');
-                }
-                // Если отмена была запрошена до получения jobId — отправляем cancel сейчас
-                if (_pendingCancel) {
-                  _pendingCancel = false;
-                  final cid = _nextId();
-                  _ws.send({
-                    'jsonrpc': '2.0',
-                    'id': cid,
-                    'method': 'agent.cancel',
-                    'params': {'jobId': jobId}
-                  });
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (_) {}
+
+    _handleRpcResponse(m);
+  }
+
+  void _debugWsMessage(Map<String, dynamic> message) {
+    if (kDebugMode) {
+      // ignore: avoid_print
+      final label = message['method']?.toString() ??
+          'resp id=${message['id'] ?? 'unknown'}';
+      print('[Repo] WS <- $label');
+    }
+  }
+
+  void _handleWsEvent(String method, dynamic params) {
+    final p = _paramsMap(params);
+    switch (method) {
+      case 'event.log':
+        _handleLogEvent(p);
+        break;
+      case 'event.screenshot':
+        _handleScreenshotEvent(p);
+        break;
+      case 'event.action':
+        _handleActionEvent(p);
+        break;
+      case 'event.approval':
+        _handleApprovalEvent(p);
+        break;
+      case 'event.progress':
+        _handleProgressEvent(p);
+        break;
+      case 'event.usage':
+        _handleUsageEvent(p);
+        break;
+      case 'event.final':
+        _handleFinalEvent(p);
+        break;
+    }
+  }
+
+  Map<String, dynamic> _paramsMap(dynamic params) {
+    if (params is Map<String, dynamic>) return params;
+    if (params is Map) {
+      return params.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return const <String, dynamic>{};
+  }
+
+  void _handleLogEvent(Map<String, dynamic> p) {
+    final msg = (p['message'] as String?) ?? '';
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[Repo] event.log: $msg');
+    }
+
+    if (msg.startsWith('done:') ||
+        msg.startsWith('ok') ||
+        msg.toLowerCase().contains('tool_result')) {
+      _msgCtrl.add(ChatMessage(
+        id: _nextId(),
+        role: 'assistant',
+        ts: DateTime.now(),
+        kind: 'action',
+        text: '✔ ok',
+        meta: const {'name': 'ok', 'status': 'ok'},
+      ));
+      return;
+    }
+
+    final cmThought = ChatMessage(
+      id: _nextId(),
+      role: 'assistant',
+      ts: DateTime.now(),
+      kind: 'thought',
+      text: msg.isEmpty ? null : msg,
+    );
+    _msgCtrl.add(cmThought);
+    _recordHistory(
+      cmThought,
+      chatId: _jobChat[_currentJobId ?? ''] ?? _activeChatId,
+    );
+  }
+
+  void _handleScreenshotEvent(Map<String, dynamic> p) {
+    if (kDebugMode) {
+      // ignore: avoid_print
+      final len = (p['data'] as String?)?.length ?? 0;
+      print('[Repo] event.screenshot len=$len');
+    }
+    _msgCtrl.add(ChatMessage(
+      id: _nextId(),
+      role: 'assistant',
+      ts: DateTime.now(),
+      kind: 'screenshot',
+      imageBase64: p['data'] as String?,
+    ));
+  }
+
+  void _handleActionEvent(Map<String, dynamic> p) {
+    final name = p['name'] as String?;
+    final status = p['status'] as String?;
+    final meta = (p['meta'] as Map?)?.cast<String, dynamic>();
+    if (_handleApprovalToolResult(p, name, meta)) {
+      return;
+    }
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[Repo] event.action: ${name ?? ''} [${status ?? ''}]');
+    }
+    _msgCtrl.add(ChatMessage(
+      id: _nextId(),
+      role: 'assistant',
+      ts: DateTime.now(),
+      kind: 'action',
+      text: _formatActionText(name, status, meta),
+      meta: {'name': name, 'status': status, 'meta': meta},
+    ));
+  }
+
+  void _handleApprovalEvent(Map<String, dynamic> p) {
+    final summary = (p['summary'] as String?) ?? 'Tool approval required';
+    final tool = (p['tool'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{};
+    _msgCtrl.add(ChatMessage(
+      id: _nextId(),
+      role: 'system',
+      ts: DateTime.now(),
+      kind: 'approval',
+      text: summary,
+      meta: {
+        'jobId': p['jobId']?.toString() ?? '',
+        'approvalId': p['approvalId']?.toString() ?? '',
+        'risk': p['risk']?.toString() ?? '',
+        'toolName': tool['name']?.toString() ?? '',
+        'toolArgs': tool['args'],
+        'expiresInSeconds': p['expiresInSeconds'],
+      },
+    ));
+  }
+
+  void _handleProgressEvent(Map<String, dynamic> p) {
+    final stage = (p['stage'] as String? ?? '').toLowerCase();
+    if (stage == 'cancelled') {
+      _runningCtrl.add(false);
+      _thinkingMsgId = null;
+    }
+  }
+
+  void _handleUsageEvent(Map<String, dynamic> p) {
+    final inTok = (p['input_tokens'] as num? ?? 0).toInt();
+    final outTok = (p['output_tokens'] as num? ?? 0).toInt();
+    final inputUsd =
+        (p['input_cost'] as num?)?.toDouble() ?? CostRates.inputUsdFor(inTok);
+    final outputUsd = (p['output_cost'] as num?)?.toDouble() ??
+        CostRates.outputUsdFor(outTok);
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[Repo] event.usage in=$inTok out=$outTok');
+    }
+    final u = CostUsage(
+      inputTokens: inTok,
+      outputTokens: outTok,
+      inputUsd: inputUsd,
+      outputUsd: outputUsd,
+    );
+    _usageCtrl.add(u);
+    _msgCtrl.add(ChatMessage(
+      id: _nextId(),
+      role: 'assistant',
+      ts: DateTime.now(),
+      kind: 'usage',
+      text: 'in=$inTok out=$outTok  cost=\$${u.totalUsd.toStringAsFixed(6)} '
+          '(input=\$${u.inputUsd.toStringAsFixed(6)}, '
+          'output=\$${u.outputUsd.toStringAsFixed(6)})',
+      meta: {
+        'inputTokens': inTok,
+        'outputTokens': outTok,
+        'inputUsd': u.inputUsd,
+        'outputUsd': u.outputUsd,
+        'totalUsd': u.totalUsd,
+        if (_activeChatId != null) 'chatId': _activeChatId,
+      },
+    ));
+  }
+
+  void _handleFinalEvent(Map<String, dynamic> p) {
+    final status = p['status'] as String?;
+    final error = p['error'] as String?;
+    final jobId = p['jobId']?.toString();
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[Repo] event.final status=$status');
+    }
+    if (status == 'fail' && error != null && error.isNotEmpty) {
+      _msgCtrl.add(ChatMessage(
+        id: _nextId(),
+        role: 'system',
+        ts: DateTime.now(),
+        kind: 'system',
+        text: error,
+        meta: const {'isError': true},
+      ));
+    }
+    if (jobId != null && jobId.isNotEmpty) {
+      _emitRemoveApprovalsForJob(jobId);
+    }
+    _removeThinkingMessage();
+    _storeProviderContext(p);
+    if (_currentJobId != null) {
+      _jobChat.remove(_currentJobId);
+      _currentJobId = null;
+    }
+    _runningCtrl.add(false);
+  }
+
+  void _removeThinkingMessage() {
+    if (_thinkingMsgId == null) return;
+    _msgCtrl.add(ChatMessage(
+      id: _nextId(),
+      role: 'assistant',
+      ts: DateTime.now(),
+      kind: 'control',
+      text: null,
+      meta: {'removeMessageId': _thinkingMsgId},
+    ));
+    _thinkingMsgId = null;
+  }
+
+  void _storeProviderContext(Map<String, dynamic> p) {
+    final provCtx = p['provider_context'];
+    if (provCtx is! Map) return;
+    final respId = provCtx['previous_response_id']?.toString();
+    final chatId = _jobChat[_currentJobId ?? ''] ?? _activeChatId;
+    if (respId != null && respId.isNotEmpty && chatId != null) {
+      _lastResponseIdByChat[chatId] = respId;
+    }
+  }
+
+  void _handleRpcResponse(Map<String, dynamic> message) {
+    final respId = message['id']?.toString();
+    if (respId == null) return;
+    final chatId = _pendingJobs.remove(respId);
+    if (chatId == null) return;
+    final res = message['result'];
+    if (res is! Map) return;
+    final jobId = res['jobId']?.toString();
+    if (jobId == null || jobId.isEmpty) return;
+
+    _jobChat[jobId] = chatId;
+    if (respId != _currentJobId) return;
+
+    _currentJobId = jobId;
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[Repo] Updated _currentJobId from reqId=$respId to jobId=$jobId');
+    }
+    if (_pendingCancel) {
+      _pendingCancel = false;
+      _sendAgentCancel(jobId);
+    }
   }
 
   void _completePendingRpc(Map<String, dynamic> message) {
@@ -550,11 +585,15 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<void> cancelJob(String jobId) async {
-    final id = _nextId();
     if (kDebugMode) {
       // ignore: avoid_print
       print('[Repo] Cancelling jobId=$jobId');
     }
+    _sendAgentCancel(jobId);
+  }
+
+  void _sendAgentCancel(String jobId) {
+    final id = _nextId();
     _ws.send({
       'jsonrpc': '2.0',
       'id': id,
@@ -840,16 +879,6 @@ class ChatRepositoryImpl implements ChatRepository {
     } catch (_) {
       return const [];
     }
-  }
-
-  String? _lastActionNameFromQueue() {
-    // Небольшой хак: пробуем найти последнее действие по последним action-сообщениям
-    // (в рамках этой простой реализации можно расширить хранением отдельной очереди)
-    return null;
-  }
-
-  void _rememberActionName(Map<String, dynamic>? meta, String? name) {
-    // Заготовка под будущий state, чтобы знать последнее действие
   }
 
   void _recordHistory(ChatMessage m, {String? chatId}) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_flutter/src/features/chat/application/stores/chat_store.dart';
@@ -100,7 +102,10 @@ class AppRoot extends StatelessWidget {
       builder: (context, child) {
         return MultiProvider(
           providers: [
-            Provider(create: (_) => BackendWsClient()),
+            Provider(
+              create: (_) => BackendWsClient(),
+              dispose: (_, client) => unawaited(client.close()),
+            ),
             Provider(create: (_) => BackendRestClient()),
             Provider<ChatCache>(create: (_) => HiveChatCache()),
             ProxyProvider3<AppConfig, BackendWsClient, BackendRestClient,
@@ -116,9 +121,15 @@ class AppRoot extends StatelessWidget {
                 }
                 return repo;
               },
+              dispose: (_, repo) {
+                if (repo is ChatRepositoryImpl) {
+                  unawaited(repo.dispose());
+                }
+              },
             ),
             ProxyProvider2<ChatRepository, ChatCache, ChatStore>(
               update: (_, repo, cache, prev) => prev ?? ChatStore(repo, cache),
+              dispose: (_, store) => store.dispose(),
             ),
           ],
           child: child ?? const SizedBox.shrink(),

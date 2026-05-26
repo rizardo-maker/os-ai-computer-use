@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:mobx/mobx.dart';
 import 'package:frontend_flutter/src/features/chat/domain/entities/chat_message.dart';
 import 'package:frontend_flutter/src/features/chat/domain/entities/cost_usage.dart';
@@ -15,8 +17,14 @@ class ChatStore = ChatStoreBase with _$ChatStore;
 abstract class ChatStoreBase with Store {
   final ChatRepository repo;
   final ChatCache? cache;
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+
   ChatStoreBase(this.repo, this.cache) {
-    // Ensure at least one chat exists
+    _createInitialChat();
+    _wireRepoStreams();
+  }
+
+  void _createInitialChat() {
     final firstId = _generateChatId();
     final first = ChatSession(
       id: firstId,
@@ -27,68 +35,79 @@ abstract class ChatStoreBase with Store {
     activeChatId = firstId;
     _messagesByChat[firstId] = ObservableList.of([]);
     messages = _messagesByChat[firstId]!;
+  }
 
-    // Wire streams
-    repo.messages().listen((m) {
-      final cid = _messageChatId ?? activeChatId;
-      // Handle control messages (e.g., remove placeholders)
-      if ((m.kind ?? '') == 'control') {
-        final rid = (m.meta?['removeMessageId'] as String?) ?? '';
-        if (rid.isNotEmpty) {
-          _removeMessageById(cid, rid);
-        }
-        final approvalJobId =
-            (m.meta?['removeApprovalsForJobId'] as String?) ?? '';
-        if (approvalJobId.isNotEmpty) {
-          _removeApprovalsForJob(approvalJobId);
-        }
-        return;
-      }
-      _appendMessageTo(cid, m);
-      _updateLastPreviewFor(cid, m.text);
-      // Keep Thinking... bubble as the last message while running
-      _ensureThinkingLast(cid);
-      // Persist to cache (skip transient messages)
-      if (_shouldPersist(m)) {
-        try {
-          cache?.saveMessage(cid, m);
-        } catch (_) {}
-      }
-    });
-    repo.usage().listen((u) {
-      usage = u;
-      totalUsd += u.totalUsd;
-      totalInputTokens += u.inputTokens;
-      totalOutputTokens += u.outputTokens;
-      // per-chat aggregation: attribute to the chat that started current job
-      final cid = _usageChatId ?? activeChatId;
-      final prevUsd = perChatUsd[cid] ?? 0.0;
-      perChatUsd[cid] = prevUsd + u.totalUsd;
-      perChatInTokens[cid] = (perChatInTokens[cid] ?? 0) + u.inputTokens;
-      perChatOutTokens[cid] = (perChatOutTokens[cid] ?? 0) + u.outputTokens;
-      _updateSessionUsage(cid);
-    });
-    repo.running().listen((r) {
-      running = r;
-      if (r) {
-        // mark which chat will receive upcoming usage and messages
-        _usageChatId = activeChatId;
-        _messageChatId = activeChatId;
-      } else {
-        // Fallback: remove any leftover Thinking... bubbles across all chats
-        _removeThinkingMessages();
-        // Persist latest response_id from repo (for OpenAI session resume)
-        _persistResponseId(_usageChatId ?? activeChatId);
-        _messageChatId = null;
-        _usageChatId = null;
-      }
-    });
-    repo.connectionStatus().listen((s) {
-      connection = s;
-      if (s == ConnectionStatus.connected) {
-        connectionError = null;
-      }
-    });
+  void _wireRepoStreams() {
+    _subscriptions
+      ..add(repo.messages().listen(_handleRepoMessage))
+      ..add(repo.usage().listen(_handleUsage))
+      ..add(repo.running().listen(_handleRunning))
+      ..add(repo.connectionStatus().listen(_handleConnectionStatus));
+  }
+
+  void _handleRepoMessage(ChatMessage m) {
+    final cid = _messageChatId ?? activeChatId;
+    if (_handleControlMessage(cid, m)) return;
+
+    _appendMessageTo(cid, m);
+    _updateLastPreviewFor(cid, m.text);
+    _ensureThinkingLast(cid);
+    _persistMessage(cid, m);
+  }
+
+  bool _handleControlMessage(String chatId, ChatMessage m) {
+    if ((m.kind ?? '') != 'control') return false;
+
+    final rid = (m.meta?['removeMessageId'] as String?) ?? '';
+    if (rid.isNotEmpty) {
+      _removeMessageById(chatId, rid);
+    }
+    final approvalJobId = (m.meta?['removeApprovalsForJobId'] as String?) ?? '';
+    if (approvalJobId.isNotEmpty) {
+      _removeApprovalsForJob(approvalJobId);
+    }
+    return true;
+  }
+
+  void _persistMessage(String chatId, ChatMessage m) {
+    if (!_shouldPersist(m)) return;
+    try {
+      cache?.saveMessage(chatId, m);
+    } catch (_) {}
+  }
+
+  void _handleUsage(CostUsage u) {
+    usage = u;
+    totalUsd += u.totalUsd;
+    totalInputTokens += u.inputTokens;
+    totalOutputTokens += u.outputTokens;
+    final cid = _usageChatId ?? activeChatId;
+    final prevUsd = perChatUsd[cid] ?? 0.0;
+    perChatUsd[cid] = prevUsd + u.totalUsd;
+    perChatInTokens[cid] = (perChatInTokens[cid] ?? 0) + u.inputTokens;
+    perChatOutTokens[cid] = (perChatOutTokens[cid] ?? 0) + u.outputTokens;
+    _updateSessionUsage(cid);
+  }
+
+  void _handleRunning(bool isRunning) {
+    running = isRunning;
+    if (isRunning) {
+      _usageChatId = activeChatId;
+      _messageChatId = activeChatId;
+      return;
+    }
+
+    _removeThinkingMessages();
+    _persistResponseId(_usageChatId ?? activeChatId);
+    _messageChatId = null;
+    _usageChatId = null;
+  }
+
+  void _handleConnectionStatus(ConnectionStatus status) {
+    connection = status;
+    if (status == ConnectionStatus.connected) {
+      connectionError = null;
+    }
   }
 
   // Sessions and per-chat state
@@ -176,6 +195,13 @@ abstract class ChatStoreBase with Store {
         meta: accepted ? null : const {'isError': true},
       ),
     );
+  }
+
+  void dispose() {
+    for (final sub in _subscriptions) {
+      unawaited(sub.cancel());
+    }
+    _subscriptions.clear();
   }
 
   @action
