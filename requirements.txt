@@ -35,7 +35,10 @@ pytest-timeout==2.3.1
 injector==0.21.0
 mcp==1.27.1
 fastapi==0.112.2
-uvicorn[standard]==0.30.6
+# FastAPI 0.112.x caps Starlette below 0.39; pin this pair to avoid resolver backtracking.
+starlette==0.38.6
+sse-starlette==3.0.3
+uvicorn[standard]==0.31.1
 python-multipart==0.0.9
 orjson==3.10.7
 pystray==0.19.5
