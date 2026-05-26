@@ -16,6 +16,10 @@ from os_ai_core.application.services.tool_execution_ledger import (
     ToolExecutionLedger,
     stable_json_hash,
 )
+from os_ai_core.application.services.provider_safety import (
+    STOP_AGENT_LOOP_META,
+    approve_provider_safety_checks,
+)
 from os_ai_core.config import LOGGER_NAME, USAGE_LOG_EACH_ITERATION
 from os_ai_core.domain.agent.events import AgentEvent
 from os_ai_core.domain.tools.models import ToolRisk
@@ -112,9 +116,11 @@ class RunAgentUseCase:
             if not response.tool_calls:
                 break
 
+            stop_requested = False
             for tool_call in response.tool_calls:
                 if self._is_cancelled(command.cancel_token):
                     self._events.emit(AgentEvent.progress(command.job_id, "cancelled", iteration))
+                    stop_requested = True
                     break
 
                 result = self._execute_tool(command, tool_call, tool_risks.get(tool_call.name))
@@ -123,7 +129,14 @@ class RunAgentUseCase:
                 else:
                     self._events.emit(AgentEvent.tool_finished(command.job_id, result))
 
+                if self._should_stop_after_tool_result(result):
+                    stop_requested = True
+                    break
+
                 messages = self._llm.append_tool_result(messages, tool_call, result)
+
+            if stop_requested:
+                break
 
         return RunAgentResult(
             messages=messages,
@@ -180,6 +193,16 @@ class RunAgentUseCase:
                 metadata={"error_code": "duplicate_tool_call", "provider_tool_type": "function"},
             )
 
+        safety_denial = approve_provider_safety_checks(
+            job_id=command.job_id,
+            tool_call=tool_call,
+            risk=risk,
+            approval=self._approval,
+        )
+        if safety_denial is not None:
+            self._ledger.record_result(command.job_id, tool_call, safety_denial)
+            return safety_denial
+
         context = ToolExecutionContext(
             job_id=command.job_id,
             conversation_id=command.conversation_id,
@@ -198,6 +221,9 @@ class RunAgentUseCase:
             return ToolRisk(str(raw)) if raw else (catalog_risk or ToolRisk.LOCAL_MUTATION)
         except Exception:
             return catalog_risk or ToolRisk.LOCAL_MUTATION
+
+    def _should_stop_after_tool_result(self, result: ToolResult) -> bool:
+        return result.metadata.get(STOP_AGENT_LOOP_META) is True
 
     def _emit_assistant_text(self, job_id: str, response: LLMResponse) -> None:
         seen: set[str] = set()

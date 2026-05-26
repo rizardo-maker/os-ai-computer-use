@@ -12,6 +12,3 @@ abstract class ChatCache {
   Future<void> saveMessage(String chatId, ChatMessage message);
   Future<void> removeMessages(String chatId);
 }
-
-
-

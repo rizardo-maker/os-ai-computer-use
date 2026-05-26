@@ -18,6 +18,3 @@ class CostUsage extends Equatable {
   @override
   List<Object?> get props => [inputTokens, outputTokens, inputUsd, outputUsd];
 }
-
-
-

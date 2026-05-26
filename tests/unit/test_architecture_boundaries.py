@@ -34,3 +34,13 @@ def test_orchestrator_facade_does_not_read_openai_private_metadata() -> None:
     text = path.read_text(encoding="utf-8")
 
     assert "_openai_" not in text
+
+
+def test_core_package_does_not_depend_on_pyautogui_directly() -> None:
+    pyproject = ROOT / "core/pyproject.toml"
+    assert "pyautogui" not in pyproject.read_text(encoding="utf-8")
+
+    for path in (ROOT / "core/src/os_ai_core").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        assert "import pyautogui" not in text, path
+        assert "from pyautogui" not in text, path

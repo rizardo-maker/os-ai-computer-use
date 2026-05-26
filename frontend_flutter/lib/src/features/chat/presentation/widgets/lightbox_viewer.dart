@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 class LightboxViewer extends StatefulWidget {
   final List<String> base64Images;
   final int initialIndex;
-  const LightboxViewer({super.key, required this.base64Images, this.initialIndex = 0});
+  const LightboxViewer(
+      {super.key, required this.base64Images, this.initialIndex = 0});
 
   @override
   State<LightboxViewer> createState() => _LightboxViewerState();
@@ -36,7 +37,8 @@ class _LightboxViewerState extends State<LightboxViewer> {
             controller: _ctrl,
             itemCount: widget.base64Images.length,
             itemBuilder: (_, i) {
-              final bytes = const Base64Decoder().convert(widget.base64Images[i]);
+              final bytes =
+                  const Base64Decoder().convert(widget.base64Images[i]);
               return InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 6,
@@ -57,5 +59,3 @@ class _LightboxViewerState extends State<LightboxViewer> {
     );
   }
 }
-
-

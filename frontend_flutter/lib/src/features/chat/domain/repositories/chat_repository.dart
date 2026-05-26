@@ -10,6 +10,11 @@ abstract class ChatRepository {
 
   Future<String> createSession({String? provider});
   Future<String> runTask({required String task});
+  Future<bool> respondApproval({
+    required String jobId,
+    required String approvalId,
+    required bool approved,
+  });
   Future<void> cancelJob(String jobId);
   Future<void> cancelCurrentJob();
   void setActiveChat(String chatId);
@@ -26,5 +31,3 @@ abstract class ChatRepository {
   });
   Future<List<int>> downloadFile(String id);
 }
-
-

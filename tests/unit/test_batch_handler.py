@@ -2,20 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _mock_pyautogui(monkeypatch):
-    """Prevent real mouse/keyboard actions during tests."""
-    mock_pag = MagicMock()
-    mock_pag.size.return_value = (1920, 1080)
-    mock_pag.position.return_value = (0, 0)
-    mock_pag.FAILSAFE = False
-    mock_pag.PAUSE = 0
-    monkeypatch.setattr("os_ai_core.tools.computer.pyautogui", mock_pag)
-    return mock_pag
+from unittest.mock import patch
 
 
 def test_single_action_delegates(monkeypatch):

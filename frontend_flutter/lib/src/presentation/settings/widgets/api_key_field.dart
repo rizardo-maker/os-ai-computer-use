@@ -67,7 +67,8 @@ class _ApiKeyFieldState extends State<ApiKeyField> {
         labelText: widget.label,
         labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
         hintText: widget.hint ?? _getDefaultHint(),
-        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
+        hintStyle: TextStyle(
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
         border: OutlineInputBorder(
           borderSide: BorderSide(color: colorScheme.outline),
         ),
@@ -136,7 +137,8 @@ class _ApiKeyFieldState extends State<ApiKeyField> {
             }
 
             final validator = ApiKeyValidator();
-            final result = validator.validateForProvider(value!, widget.provider);
+            final result =
+                validator.validateForProvider(value!, widget.provider);
 
             return result.isValid ? null : result.error;
           },

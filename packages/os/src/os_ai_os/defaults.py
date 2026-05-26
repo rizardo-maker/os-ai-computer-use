@@ -12,7 +12,11 @@ import time
 
 import pyautogui
 
+from .config import PYAUTO_FAILSAFE, PYAUTO_PAUSE_SECONDS
 from .ports.types import Size
+
+pyautogui.PAUSE = PYAUTO_PAUSE_SECONDS
+pyautogui.FAILSAFE = PYAUTO_FAILSAFE
 
 
 # --------------- Mouse ---------------
@@ -20,6 +24,10 @@ from .ports.types import Size
 
 class PyAutoGUIMouse:
     """Mouse implementation via pyautogui (works on X11, Win32, Cocoa)."""
+
+    def position(self) -> Tuple[int, int]:
+        x, y = pyautogui.position()
+        return int(x), int(y)
 
     def move_to(self, x: int, y: int, *, duration_ms: int = 0) -> None:
         pyautogui.moveTo(int(x), int(y), duration=max(0.0, float(duration_ms) / 1000.0))
@@ -79,6 +87,12 @@ class PyAutoGUIKeyboard:
             pyautogui.press(keys[0])
         else:
             pyautogui.hotkey(*keys)
+
+    def key_down(self, key: str) -> None:
+        pyautogui.keyDown(key)
+
+    def key_up(self, key: str) -> None:
+        pyautogui.keyUp(key)
 
     def type_text(self, text: str, *, wpm: int = 180) -> None:
         interval = 0.02

@@ -16,11 +16,16 @@ class BackendRestClient {
     }
   }
 
-  Future<String> uploadBytes(String name, List<int> bytes, {String? mime, void Function(int, int)? onProgress, void Function(void Function())? onCreateCancel}) async {
+  Future<String> uploadBytes(String name, List<int> bytes,
+      {String? mime,
+      void Function(int, int)? onProgress,
+      void Function(void Function())? onCreateCancel}) async {
     final cancelToken = CancelToken();
     try {
       onCreateCancel?.call(() {
-        try { cancelToken.cancel("user"); } catch (_) {}
+        try {
+          cancelToken.cancel("user");
+        } catch (_) {}
       });
     } catch (_) {}
     final form = FormData.fromMap({
@@ -30,12 +35,14 @@ class BackendRestClient {
         contentType: mime != null ? MediaType.parse(mime) : null,
       ),
     });
-    final resp = await _dio.post('/v1/files', data: form, onSendProgress: onProgress, cancelToken: cancelToken);
+    final resp = await _dio.post('/v1/files',
+        data: form, onSendProgress: onProgress, cancelToken: cancelToken);
     return (resp.data as Map<String, dynamic>)['fileId'] as String;
   }
 
   Future<List<int>> downloadBytes(String fileId) async {
-    final resp = await _dio.get<List<int>>('/v1/files/' + fileId, options: Options(responseType: ResponseType.bytes));
+    final resp = await _dio.get<List<int>>('/v1/files/$fileId',
+        options: Options(responseType: ResponseType.bytes));
     return resp.data ?? <int>[];
   }
 
@@ -44,5 +51,3 @@ class BackendRestClient {
     return (resp.data as Map<String, dynamic>);
   }
 }
-
-

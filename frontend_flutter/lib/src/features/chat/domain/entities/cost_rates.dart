@@ -4,8 +4,6 @@ class CostRates {
   static const double outputPerMTokensUsd = 15.0;
 
   static double inputUsdFor(int tokens) => (tokens / 1e6) * inputPerMTokensUsd;
-  static double outputUsdFor(int tokens) => (tokens / 1e6) * outputPerMTokensUsd;
+  static double outputUsdFor(int tokens) =>
+      (tokens / 1e6) * outputPerMTokensUsd;
 }
-
-
-

@@ -22,8 +22,6 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
   String _openaiKey = '';
   bool _isLoading = false;
 
-  String get _activeKey => _selectedProvider == 'openai' ? _openaiKey : _anthropicKey;
-
   Future<void> _getStarted() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -52,7 +50,9 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving API key: $e'), backgroundColor: Theme.of(context).colorScheme.errorContainer),
+        SnackBar(
+            content: Text('Error saving API key: $e'),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -74,7 +74,8 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(Icons.smart_toy, size: 64, color: Theme.of(context).colorScheme.primary),
+                Icon(Icons.smart_toy,
+                    size: 64, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 16),
 
                 Text(
@@ -93,11 +94,18 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
                 // Provider selector
                 SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'anthropic', label: Text('Anthropic'), icon: Icon(Icons.auto_awesome)),
-                    ButtonSegment(value: 'openai', label: Text('OpenAI'), icon: Icon(Icons.bolt)),
+                    ButtonSegment(
+                        value: 'anthropic',
+                        label: Text('Anthropic'),
+                        icon: Icon(Icons.auto_awesome)),
+                    ButtonSegment(
+                        value: 'openai',
+                        label: Text('OpenAI'),
+                        icon: Icon(Icons.bolt)),
                   ],
                   selected: {_selectedProvider},
-                  onSelectionChanged: (v) => setState(() => _selectedProvider = v.first),
+                  onSelectionChanged: (v) =>
+                      setState(() => _selectedProvider = v.first),
                 ),
                 const SizedBox(height: 24),
 
@@ -110,9 +118,11 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
                     shape: const Border(),
                     collapsedShape: const Border(),
                     tilePadding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    childrenPadding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 16.0),
+                    childrenPadding:
+                        const EdgeInsets.fromLTRB(16.0, 0, 16.0, 16.0),
                     iconColor: Theme.of(context).colorScheme.onPrimaryContainer,
-                    collapsedIconColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                    collapsedIconColor:
+                        Theme.of(context).colorScheme.onPrimaryContainer,
                     title: Text(
                       'Need an API key?',
                       style: TextStyle(
@@ -127,12 +137,29 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              isAnthropic ? '1. Visit console.anthropic.com' : '1. Visit platform.openai.com',
-                              style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer),
+                              isAnthropic
+                                  ? '1. Visit console.anthropic.com'
+                                  : '1. Visit platform.openai.com',
+                              style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onPrimaryContainer),
                             ),
-                            Text('2. Sign up or log in', style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer)),
-                            Text('3. Create a new API key', style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer)),
-                            Text('4. Copy and paste it below', style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer)),
+                            Text('2. Sign up or log in',
+                                style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer)),
+                            Text('3. Create a new API key',
+                                style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer)),
+                            Text('4. Copy and paste it below',
+                                style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer)),
                             const SizedBox(height: 12),
                             InkWell(
                               onTap: () => _launchUrl(
@@ -142,12 +169,19 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
                               ),
                               child: Row(
                                 children: [
-                                  Icon(Icons.launch, size: 16, color: Theme.of(context).colorScheme.primary),
+                                  Icon(Icons.launch,
+                                      size: 16,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary),
                                   const SizedBox(width: 4),
                                   Text(
-                                    isAnthropic ? 'Open Anthropic Console' : 'Open OpenAI Platform',
+                                    isAnthropic
+                                        ? 'Open Anthropic Console'
+                                        : 'Open OpenAI Platform',
                                     style: TextStyle(
-                                      color: Theme.of(context).colorScheme.primary,
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
                                       decoration: TextDecoration.underline,
                                     ),
                                   ),
@@ -184,7 +218,8 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
                 // Security notice
                 Row(
                   children: [
-                    Icon(Icons.lock, size: 16, color: Theme.of(context).colorScheme.primary),
+                    Icon(Icons.lock,
+                        size: 16, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -203,13 +238,18 @@ class _FirstRunDialogState extends State<FirstRunDialog> {
                     textStyle: const TextStyle(fontSize: 16),
                   ),
                   child: _isLoading
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
                       : const Text('Get Started'),
                 ),
                 const SizedBox(height: 12),
 
                 TextButton(
-                  onPressed: _isLoading ? null : () => Navigator.of(context).pop(false),
+                  onPressed: _isLoading
+                      ? null
+                      : () => Navigator.of(context).pop(false),
                   child: const Text('Skip for now'),
                 ),
               ],

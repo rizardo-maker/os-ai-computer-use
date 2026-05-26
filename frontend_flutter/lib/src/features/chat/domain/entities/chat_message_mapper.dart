@@ -11,7 +11,9 @@ extension ChatMessageMapper on ChatMessage {
   /// and only the relative path is stored in the map (`imagePath` key).
   Map<String, dynamic> toMap({String? screenshotDir}) {
     String? imagePath;
-    if (imageBase64 != null && imageBase64!.isNotEmpty && screenshotDir != null) {
+    if (imageBase64 != null &&
+        imageBase64!.isNotEmpty &&
+        screenshotDir != null) {
       try {
         final file = File('$screenshotDir/$id.jpg');
         file.parent.createSync(recursive: true);

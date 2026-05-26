@@ -38,7 +38,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final config = context.read<AppConfig>();
     _hostController = TextEditingController(text: config.host);
     _portController = TextEditingController(text: config.port.toString());
-    _preferencesController = TextEditingController(text: config.userPreferences ?? '');
+    _preferencesController =
+        TextEditingController(text: config.userPreferences ?? '');
     _loadSavedKeys();
   }
 
@@ -206,133 +207,144 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-            // Personal Preferences Section
-            _buildSectionHeader('Personal Preferences', Icons.tune),
-            const SizedBox(height: 8),
-            Card(
-              color: colorScheme.surfaceContainerLow,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Describe how you want the AI to respond and behave. '
-                      'These preferences will be included in every prompt.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                  // Personal Preferences Section
+                  _buildSectionHeader('Personal Preferences', Icons.tune),
+                  const SizedBox(height: 8),
+                  Card(
+                    color: colorScheme.surfaceContainerLow,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Describe how you want the AI to respond and behave. '
+                            'These preferences will be included in every prompt.',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _preferencesController,
+                            style: TextStyle(color: colorScheme.onSurface),
+                            decoration: InputDecoration(
+                              labelText: 'Your preferences',
+                              labelStyle: TextStyle(
+                                  color: colorScheme.onSurfaceVariant),
+                              hintText:
+                                  'e.g. Always respond in Russian, be concise, use code examples...',
+                              hintStyle: TextStyle(
+                                  color: colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.6)),
+                              border: OutlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: colorScheme.outline),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: colorScheme.outline),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                    color: colorScheme.primary, width: 2),
+                              ),
+                              alignLabelWithHint: true,
+                            ),
+                            maxLines: 5,
+                            minLines: 3,
+                            maxLength: 2000,
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _preferencesController,
-                      style: TextStyle(color: colorScheme.onSurface),
-                      decoration: InputDecoration(
-                        labelText: 'Your preferences',
-                        labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                        hintText: 'e.g. Always respond in Russian, be concise, use code examples...',
-                        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
-                        border: OutlineInputBorder(
-                          borderSide: BorderSide(color: colorScheme.outline),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: colorScheme.outline),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: colorScheme.primary, width: 2),
-                        ),
-                        alignLabelWithHint: true,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // API Keys Section
+                  _buildSectionHeader('API Keys', Icons.key),
+                  const SizedBox(height: 8),
+                  _buildHelpCard(
+                    'Get your API keys:',
+                    [
+                      _buildLinkItem(
+                        'Anthropic Console',
+                        'https://console.anthropic.com/',
+                        Icons.launch,
                       ),
-                      maxLines: 5,
-                      minLines: 3,
-                      maxLength: 2000,
-                    ),
+                      _buildLinkItem(
+                        'OpenAI Platform',
+                        'https://platform.openai.com/api-keys',
+                        Icons.launch,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Anthropic API Key
+                  ApiKeyField(
+                    label: 'Anthropic API Key',
+                    hint: 'sk-ant-...',
+                    initialValue: _anthropicKey,
+                    provider: ApiProvider.anthropic,
+                    required: _activeProvider == 'anthropic',
+                    onChanged: (value) => _anthropicKey = value,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // OpenAI API Key
+                  ApiKeyField(
+                    label: 'OpenAI API Key',
+                    hint: 'sk-...',
+                    initialValue: _openaiKey,
+                    provider: ApiProvider.openai,
+                    required: _activeProvider == 'openai',
+                    onChanged: (value) => _openaiKey = value,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Provider Selector
+                  _buildSectionHeader('Active Provider', Icons.smart_toy),
+                  const SizedBox(height: 8),
+                  _buildProviderSelector(),
+                  const SizedBox(height: 32),
+
+                  // Advanced Settings
+                  _buildAdvancedSection(),
+
+                  const SizedBox(height: 32),
+
+                  // Permissions (macOS)
+                  if (!kIsWeb &&
+                      defaultTargetPlatform == TargetPlatform.macOS) ...[
+                    _buildSectionHeader('Permissions', Icons.security),
+                    const SizedBox(height: 8),
+                    const _PermissionsSection(),
+                    const SizedBox(height: 32),
                   ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
 
-            // API Keys Section
-            _buildSectionHeader('API Keys', Icons.key),
-            const SizedBox(height: 8),
-            _buildHelpCard(
-              'Get your API keys:',
-              [
-                _buildLinkItem(
-                  'Anthropic Console',
-                  'https://console.anthropic.com/',
-                  Icons.launch,
-                ),
-                _buildLinkItem(
-                  'OpenAI Platform',
-                  'https://platform.openai.com/api-keys',
-                  Icons.launch,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                  // Save Button
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _saveSettings,
+                    icon: const Icon(Icons.save),
+                    label: const Text('Save Settings'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.all(16),
+                      textStyle: const TextStyle(fontSize: 16),
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                      disabledBackgroundColor:
+                          colorScheme.surfaceContainerHighest,
+                      disabledForegroundColor:
+                          colorScheme.onSurface.withValues(alpha: 0.38),
+                    ),
+                  ),
 
-            // Anthropic API Key
-            ApiKeyField(
-              label: 'Anthropic API Key',
-              hint: 'sk-ant-...',
-              initialValue: _anthropicKey,
-              provider: ApiProvider.anthropic,
-              required: _activeProvider == 'anthropic',
-              onChanged: (value) => _anthropicKey = value,
-            ),
-            const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-            // OpenAI API Key
-            ApiKeyField(
-              label: 'OpenAI API Key',
-              hint: 'sk-...',
-              initialValue: _openaiKey,
-              provider: ApiProvider.openai,
-              required: _activeProvider == 'openai',
-              onChanged: (value) => _openaiKey = value,
-            ),
-            const SizedBox(height: 24),
-
-            // Provider Selector
-            _buildSectionHeader('Active Provider', Icons.smart_toy),
-            const SizedBox(height: 8),
-            _buildProviderSelector(),
-            const SizedBox(height: 32),
-
-            // Advanced Settings
-            _buildAdvancedSection(),
-
-            const SizedBox(height: 32),
-
-            // Permissions (macOS)
-            if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) ...[
-              _buildSectionHeader('Permissions', Icons.security),
-              const SizedBox(height: 8),
-              const _PermissionsSection(),
-              const SizedBox(height: 32),
-            ],
-
-            // Save Button
-            ElevatedButton.icon(
-              onPressed: _isLoading ? null : _saveSettings,
-              icon: const Icon(Icons.save),
-              label: const Text('Save Settings'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                textStyle: const TextStyle(fontSize: 16),
-                backgroundColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
-                disabledBackgroundColor: colorScheme.surfaceContainerHighest,
-                disabledForegroundColor: colorScheme.onSurface.withValues(alpha: 0.38),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Security Notice
-            _buildSecurityNotice(),
+                  // Security Notice
+                  _buildSecurityNotice(),
                 ],
               ),
             ),
@@ -363,8 +375,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Text(
           title,
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: colorScheme.onSurface,
-          ),
+                color: colorScheme.onSurface,
+              ),
         ),
       ],
     );
@@ -448,9 +460,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const Text('Anthropic (Claude)'),
                       const SizedBox(width: 6),
                       if (hasAnthropic)
-                        Icon(Icons.check_circle, color: colorScheme.primary, size: 16)
+                        Icon(Icons.check_circle,
+                            color: colorScheme.primary, size: 16)
                       else
-                        Icon(Icons.warning_amber, color: colorScheme.error, size: 16),
+                        Icon(Icons.warning_amber,
+                            color: colorScheme.error, size: 16),
                     ],
                   ),
                   icon: const Icon(Icons.auto_awesome),
@@ -463,16 +477,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const Text('OpenAI (GPT)'),
                       const SizedBox(width: 6),
                       if (hasOpenai)
-                        Icon(Icons.check_circle, color: colorScheme.primary, size: 16)
+                        Icon(Icons.check_circle,
+                            color: colorScheme.primary, size: 16)
                       else
-                        Icon(Icons.warning_amber, color: colorScheme.error, size: 16),
+                        Icon(Icons.warning_amber,
+                            color: colorScheme.error, size: 16),
                     ],
                   ),
                   icon: const Icon(Icons.bolt),
                 ),
               ],
               selected: {_activeProvider},
-              onSelectionChanged: (v) => setState(() => _activeProvider = v.first),
+              onSelectionChanged: (v) =>
+                  setState(() => _activeProvider = v.first),
             ),
             if ((_activeProvider == 'anthropic' && !hasAnthropic) ||
                 (_activeProvider == 'openai' && !hasOpenai))
@@ -517,7 +534,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 borderSide: BorderSide(color: colorScheme.primary, width: 2),
               ),
               hintText: '127.0.0.1',
-              hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
+              hintStyle: TextStyle(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
             ),
             validator: (value) {
               if (value == null || value.isEmpty) {
@@ -543,7 +561,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 borderSide: BorderSide(color: colorScheme.primary, width: 2),
               ),
               hintText: '8765',
-              hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
+              hintStyle: TextStyle(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
             ),
             keyboardType: TextInputType.number,
             validator: (value) {
@@ -581,8 +600,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Text(
                 'Your API keys are encrypted (AES-256) and stored locally on your device.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onTertiaryContainer,
-                ),
+                      color: colorScheme.onTertiaryContainer,
+                    ),
               ),
             ),
           ],
@@ -602,7 +621,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class _CheckConnectionButton extends StatefulWidget {
   final TextEditingController hostController;
   final TextEditingController portController;
-  const _CheckConnectionButton({required this.hostController, required this.portController});
+  const _CheckConnectionButton(
+      {required this.hostController, required this.portController});
 
   @override
   State<_CheckConnectionButton> createState() => _CheckConnectionButtonState();
@@ -614,9 +634,17 @@ class _CheckConnectionButtonState extends State<_CheckConnectionButton> {
   bool? _success;
 
   Future<void> _check() async {
-    setState(() { _checking = true; _result = null; _success = null; });
-    final host = widget.hostController.text.trim().isEmpty ? '127.0.0.1' : widget.hostController.text.trim();
-    final port = widget.portController.text.trim().isEmpty ? '8765' : widget.portController.text.trim();
+    setState(() {
+      _checking = true;
+      _result = null;
+      _success = null;
+    });
+    final host = widget.hostController.text.trim().isEmpty
+        ? '127.0.0.1'
+        : widget.hostController.text.trim();
+    final port = widget.portController.text.trim().isEmpty
+        ? '8765'
+        : widget.portController.text.trim();
     final url = 'http://$host:$port/healthz';
 
     try {
@@ -625,12 +653,21 @@ class _CheckConnectionButtonState extends State<_CheckConnectionButton> {
         options: Options(receiveTimeout: const Duration(seconds: 5)),
       );
       if (response.statusCode == 200) {
-        setState(() { _result = 'Connected'; _success = true; });
+        setState(() {
+          _result = 'Connected';
+          _success = true;
+        });
       } else {
-        setState(() { _result = 'Status ${response.statusCode}'; _success = false; });
+        setState(() {
+          _result = 'Status ${response.statusCode}';
+          _success = false;
+        });
       }
     } catch (e) {
-      setState(() { _result = 'Connection failed'; _success = false; });
+      setState(() {
+        _result = 'Connection failed';
+        _success = false;
+      });
     } finally {
       setState(() => _checking = false);
     }
@@ -645,7 +682,10 @@ class _CheckConnectionButtonState extends State<_CheckConnectionButton> {
         OutlinedButton.icon(
           onPressed: _checking ? null : _check,
           icon: _checking
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.wifi_find, size: 18),
           label: const Text('Check Connection'),
           style: OutlinedButton.styleFrom(
@@ -723,8 +763,9 @@ class _PermissionsSectionState extends State<_PermissionsSection> {
     if (mounted) _checkAll();
   }
 
-  int get _grantedCount =>
-      [_accessibility, _screenRecording, _inputMonitoring].where((v) => v == true).length;
+  int get _grantedCount => [_accessibility, _screenRecording, _inputMonitoring]
+      .where((v) => v == true)
+      .length;
 
   @override
   Widget build(BuildContext context) {
@@ -761,9 +802,13 @@ class _PermissionsSectionState extends State<_PermissionsSection> {
               child: Row(
                 children: [
                   Icon(
-                    allGranted ? Icons.check_circle : Icons.warning_amber_rounded,
+                    allGranted
+                        ? Icons.check_circle
+                        : Icons.warning_amber_rounded,
                     size: 18,
-                    color: allGranted ? const Color(0xFF66BB6A) : colorScheme.error,
+                    color: allGranted
+                        ? const Color(0xFF66BB6A)
+                        : colorScheme.error,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -773,16 +818,20 @@ class _PermissionsSectionState extends State<_PermissionsSection> {
                           : '$_grantedCount of 3 permissions granted — some features may not work',
                       style: TextStyle(
                         fontSize: 12,
-                        color: allGranted ? const Color(0xFF66BB6A) : colorScheme.error,
+                        color: allGranted
+                            ? const Color(0xFF66BB6A)
+                            : colorScheme.error,
                       ),
                     ),
                   ),
                   IconButton(
                     tooltip: 'Re-check permissions',
                     onPressed: _checkAll,
-                    icon: Icon(Icons.refresh, size: 16, color: colorScheme.onSurfaceVariant),
+                    icon: Icon(Icons.refresh,
+                        size: 16, color: colorScheme.onSurfaceVariant),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
                   ),
                 ],
               ),
@@ -819,10 +868,11 @@ class _PermissionsSectionState extends State<_PermissionsSection> {
               Text(
                 'After granting, you may need to restart the app for changes to take effect.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                  fontStyle: FontStyle.italic,
-                  fontSize: 11,
-                ),
+                      color:
+                          colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      fontStyle: FontStyle.italic,
+                      fontSize: 11,
+                    ),
               ),
             ],
           ],
@@ -886,31 +936,35 @@ class _PermissionRow extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(name, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface,
-                    )),
-                    if (!this.required) ...[
+                    Text(name,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurface,
+                            )),
+                    if (!required) ...[
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
                         decoration: BoxDecoration(
                           color: colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text('Optional', style: TextStyle(
-                          fontSize: 9,
-                          color: colorScheme.onSurfaceVariant,
-                        )),
+                        child: Text('Optional',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: colorScheme.onSurfaceVariant,
+                            )),
                       ),
                     ],
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text(description, style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontSize: 11,
-                )),
+                Text(description,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                        )),
               ],
             ),
           ),
@@ -923,14 +977,17 @@ class _PermissionRow extends StatelessWidget {
                 color: const Color(0xFF66BB6A).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Row(
+              child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.check, size: 12, color: Color(0xFF66BB6A)),
-                  const SizedBox(width: 4),
-                  const Text('Granted', style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF66BB6A),
-                  )),
+                  Icon(Icons.check, size: 12, color: Color(0xFF66BB6A)),
+                  SizedBox(width: 4),
+                  Text('Granted',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF66BB6A),
+                      )),
                 ],
               ),
             )
@@ -940,9 +997,11 @@ class _PermissionRow extends StatelessWidget {
               icon: const Icon(Icons.open_in_new, size: 14),
               label: const Text('Grant'),
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 textStyle: const TextStyle(fontSize: 12),
-                side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.5)),
+                side: BorderSide(
+                    color: colorScheme.primary.withValues(alpha: 0.5)),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),

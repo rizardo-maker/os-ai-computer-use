@@ -10,15 +10,19 @@ import 'package:frontend_flutter/src/features/chat/domain/entities/connection_st
 
 part 'chat_store.g.dart';
 
-class ChatStore = _ChatStore with _$ChatStore;
+class ChatStore = ChatStoreBase with _$ChatStore;
 
-abstract class _ChatStore with Store {
+abstract class ChatStoreBase with Store {
   final ChatRepository repo;
   final ChatCache? cache;
-  _ChatStore(this.repo, {this.cache}) {
+  ChatStoreBase(this.repo, this.cache) {
     // Ensure at least one chat exists
     final firstId = _generateChatId();
-    final first = ChatSession(id: firstId, title: 'Chat 1', createdAt: DateTime.now());
+    final first = ChatSession(
+      id: firstId,
+      title: 'Chat 1',
+      createdAt: DateTime.now(),
+    );
     sessions.add(first);
     activeChatId = firstId;
     _messagesByChat[firstId] = ObservableList.of([]);
@@ -33,6 +37,11 @@ abstract class _ChatStore with Store {
         if (rid.isNotEmpty) {
           _removeMessageById(cid, rid);
         }
+        final approvalJobId =
+            (m.meta?['removeApprovalsForJobId'] as String?) ?? '';
+        if (approvalJobId.isNotEmpty) {
+          _removeApprovalsForJob(approvalJobId);
+        }
         return;
       }
       _appendMessageTo(cid, m);
@@ -41,7 +50,9 @@ abstract class _ChatStore with Store {
       _ensureThinkingLast(cid);
       // Persist to cache (skip transient messages)
       if (_shouldPersist(m)) {
-        try { cache?.saveMessage(cid, m); } catch (_) {}
+        try {
+          cache?.saveMessage(cid, m);
+        } catch (_) {}
       }
     });
     repo.usage().listen((u) {
@@ -87,7 +98,8 @@ abstract class _ChatStore with Store {
   @observable
   String activeChatId = '';
 
-  final ObservableMap<String, ObservableList<ChatMessage>> _messagesByChat = ObservableMap.of({});
+  final ObservableMap<String, ObservableList<ChatMessage>> _messagesByChat =
+      ObservableMap.of({});
 
   @observable
   ObservableList<ChatMessage> messages = ObservableList.of([]);
@@ -134,6 +146,38 @@ abstract class _ChatStore with Store {
     await repo.runTask(task: text);
   }
 
+  Future<void> respondApproval({
+    required String messageId,
+    required String jobId,
+    required String approvalId,
+    required bool approved,
+  }) async {
+    var accepted = false;
+    try {
+      accepted = await repo.respondApproval(
+        jobId: jobId,
+        approvalId: approvalId,
+        approved: approved,
+      );
+    } catch (_) {
+      accepted = false;
+    }
+    final cid = _removeMessageByIdFromAnyChat(messageId) ?? activeChatId;
+    _appendMessageTo(
+      cid,
+      ChatMessage(
+        id: _generateChatId(),
+        role: 'system',
+        ts: DateTime.now(),
+        kind: 'system',
+        text: accepted
+            ? (approved ? 'Approved tool request.' : 'Denied tool request.')
+            : 'Approval is no longer active.',
+        meta: accepted ? null : const {'isError': true},
+      ),
+    );
+  }
+
   @action
   Future<void> init() async {
     try {
@@ -141,10 +185,14 @@ abstract class _ChatStore with Store {
       if (saved != null && saved.isNotEmpty) {
         sessions = ObservableList.of(saved);
         activeChatId = saved.first.id;
-        final msgs = await cache?.loadMessages(activeChatId);
-        _messagesByChat[activeChatId] = ObservableList.of(msgs ?? []);
+        final msgs = _restorableMessages(
+          await cache?.loadMessages(activeChatId),
+        );
+        _messagesByChat[activeChatId] = ObservableList.of(msgs);
         messages = _messagesByChat[activeChatId]!;
-        try { repo.setActiveChat(activeChatId); } catch (_) {}
+        try {
+          repo.setActiveChat(activeChatId);
+        } catch (_) {}
         _restoreContext(activeChatId, msgs);
       }
     } catch (_) {}
@@ -159,16 +207,26 @@ abstract class _ChatStore with Store {
   @action
   String createNewChat({String? title}) {
     final id = _generateChatId();
-    final c = ChatSession(id: id, title: title?.trim().isNotEmpty == true ? title!.trim() : 'Chat ' + (sessions.length + 1).toString(), createdAt: DateTime.now());
+    final c = ChatSession(
+      id: id,
+      title: title?.trim().isNotEmpty == true
+          ? title!.trim()
+          : 'Chat ${sessions.length + 1}',
+      createdAt: DateTime.now(),
+    );
     sessions.insert(0, c);
-    try { cache?.upsertSession(c); } catch (_) {}
+    try {
+      cache?.upsertSession(c);
+    } catch (_) {}
     _messagesByChat[id] = ObservableList.of([]);
     perChatUsd[id] = 0.0;
     perChatInTokens[id] = 0;
     perChatOutTokens[id] = 0;
     activeChatId = id;
     messages = _messagesByChat[id]!;
-    try { repo.setActiveChat(id); } catch (_) {}
+    try {
+      repo.setActiveChat(id);
+    } catch (_) {}
     return id;
   }
 
@@ -176,11 +234,12 @@ abstract class _ChatStore with Store {
   Future<void> setActiveChat(String id) async {
     if (id == activeChatId) return;
     // Lazy-load messages from cache if not yet in memory
-    List<ChatMessage>? loaded;
-    if (!_messagesByChat.containsKey(id) || (_messagesByChat[id]?.isEmpty ?? true)) {
+    List<ChatMessage> loaded = <ChatMessage>[];
+    if (!_messagesByChat.containsKey(id) ||
+        (_messagesByChat[id]?.isEmpty ?? true)) {
       try {
-        loaded = await cache?.loadMessages(id);
-        if (loaded != null && loaded.isNotEmpty) {
+        loaded = _restorableMessages(await cache?.loadMessages(id));
+        if (loaded.isNotEmpty) {
           _messagesByChat[id] = ObservableList.of(loaded);
         }
       } catch (_) {}
@@ -190,7 +249,9 @@ abstract class _ChatStore with Store {
     }
     activeChatId = id;
     messages = _messagesByChat[id]!;
-    try { repo.setActiveChat(id); } catch (_) {}
+    try {
+      repo.setActiveChat(id);
+    } catch (_) {}
     // Restore conversation context for AI
     _restoreContext(id, loaded);
   }
@@ -202,7 +263,9 @@ abstract class _ChatStore with Store {
       final s = sessions[idx];
       final next = s.copyWith(title: title);
       sessions[idx] = next;
-      try { cache?.upsertSession(next); } catch (_) {}
+      try {
+        cache?.upsertSession(next);
+      } catch (_) {}
     }
   }
 
@@ -213,18 +276,26 @@ abstract class _ChatStore with Store {
     perChatUsd.remove(id);
     perChatInTokens.remove(id);
     perChatOutTokens.remove(id);
-    try { cache?.removeSession(id); } catch (_) {}
-    try { cache?.removeMessages(id); } catch (_) {}
+    try {
+      cache?.removeSession(id);
+    } catch (_) {}
+    try {
+      cache?.removeMessages(id);
+    } catch (_) {}
     if (activeChatId == id) {
       if (sessions.isNotEmpty) {
         activeChatId = sessions.first.id;
         messages = _messagesByChat[activeChatId] ?? ObservableList.of([]);
-        try { repo.setActiveChat(activeChatId); } catch (_) {}
+        try {
+          repo.setActiveChat(activeChatId);
+        } catch (_) {}
       } else {
         final nid = createNewChat();
         activeChatId = nid;
         messages = _messagesByChat[activeChatId] ?? ObservableList.of([]);
-        try { repo.setActiveChat(activeChatId); } catch (_) {}
+        try {
+          repo.setActiveChat(activeChatId);
+        } catch (_) {}
       }
     }
   }
@@ -252,11 +323,43 @@ abstract class _ChatStore with Store {
     }
   }
 
+  String? _removeMessageByIdFromAnyChat(String id) {
+    for (final entry in _messagesByChat.entries) {
+      final before = entry.value.length;
+      entry.value.removeWhere((message) => message.id == id);
+      if (entry.value.length != before) {
+        if (entry.key == activeChatId && messages != entry.value) {
+          messages = entry.value;
+        }
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  void _removeApprovalsForJob(String jobId) {
+    for (final entry in _messagesByChat.entries) {
+      final before = entry.value.length;
+      entry.value.removeWhere(
+        (message) =>
+            message.kind == 'approval' &&
+            message.meta?['jobId']?.toString() == jobId,
+      );
+      if (entry.value.length != before &&
+          entry.key == activeChatId &&
+          messages != entry.value) {
+        messages = entry.value;
+      }
+    }
+  }
+
   void _ensureThinkingLast(String chatId) {
     final list = _messagesByChat[chatId];
     if (list == null || list.isEmpty) return;
     // find current Thinking... bubble
-    final idx = list.lastIndexWhere((e) => (e.meta?['thinking'] as bool?) == true);
+    final idx = list.lastIndexWhere(
+      (e) => (e.meta?['thinking'] as bool?) == true,
+    );
     if (idx < 0) return;
     if (idx == list.length - 1) return; // already last
     final item = list.removeAt(idx);
@@ -287,7 +390,9 @@ abstract class _ChatStore with Store {
       final s = sessions[idx];
       final next = s.copyWith(lastMessageText: text);
       sessions[idx] = next;
-      try { cache?.upsertSession(next); } catch (_) {}
+      try {
+        cache?.upsertSession(next);
+      } catch (_) {}
     }
   }
 
@@ -301,7 +406,9 @@ abstract class _ChatStore with Store {
         totalOutputTokens: perChatOutTokens[chatId] ?? 0,
       );
       sessions[idx] = next;
-      try { cache?.upsertSession(next); } catch (_) {}
+      try {
+        cache?.upsertSession(next);
+      } catch (_) {}
     }
   }
 
@@ -309,9 +416,15 @@ abstract class _ChatStore with Store {
 
   /// Whether a message should be persisted to disk.
   bool _shouldPersist(ChatMessage m) {
-    if ((m.kind ?? '') == 'control') return false;
+    final kind = m.kind ?? '';
+    if (kind == 'control' || kind == 'approval') return false;
     if ((m.meta?['thinking'] as bool?) == true) return false;
     return true;
+  }
+
+  List<ChatMessage> _restorableMessages(List<ChatMessage>? source) {
+    if (source == null || source.isEmpty) return <ChatMessage>[];
+    return source.where(_shouldPersist).toList(growable: false);
   }
 
   /// Restore AI conversation context from persisted messages and session metadata.
@@ -324,8 +437,9 @@ abstract class _ChatStore with Store {
         }
         // Restore previous_response_id from session
         final session = sessions.cast<ChatSession?>().firstWhere(
-          (s) => s?.id == chatId, orElse: () => null,
-        );
+              (s) => s?.id == chatId,
+              orElse: () => null,
+            );
         if (session?.lastResponseId != null) {
           impl.setLastResponseId(chatId, session!.lastResponseId);
         }
@@ -345,7 +459,9 @@ abstract class _ChatStore with Store {
             if (s.lastResponseId != respId) {
               final next = s.copyWith(lastResponseId: respId);
               sessions[idx] = next;
-              try { cache?.upsertSession(next); } catch (_) {}
+              try {
+                cache?.upsertSession(next);
+              } catch (_) {}
             }
           }
         }
@@ -353,5 +469,3 @@ abstract class _ChatStore with Store {
     } catch (_) {}
   }
 }
-
-

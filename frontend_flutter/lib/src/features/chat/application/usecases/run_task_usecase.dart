@@ -8,5 +8,3 @@ class RunTaskUseCase {
 
   Future<String> call(String task) => repo.runTask(task: task);
 }
-
-

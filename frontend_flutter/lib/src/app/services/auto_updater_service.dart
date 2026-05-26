@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -14,7 +13,8 @@ class AutoUpdaterService {
   // GitHub repository info - update these with your actual repo
   static const String _owner = 'iliyaZelenko';
   static const String _repo = 'os-ai-computer-use';
-  static const String _apiUrl = 'https://api.github.com/repos/$_owner/$_repo/releases/latest';
+  static const String _apiUrl =
+      'https://api.github.com/repos/$_owner/$_repo/releases/latest';
 
   String? _currentVersion;
   String? _latestVersion;
@@ -90,8 +90,12 @@ class AutoUpdaterService {
       final latestParts = latest.split('.').map(int.parse).toList();
 
       // Pad with zeros if needed
-      while (currentParts.length < 3) currentParts.add(0);
-      while (latestParts.length < 3) latestParts.add(0);
+      while (currentParts.length < 3) {
+        currentParts.add(0);
+      }
+      while (latestParts.length < 3) {
+        latestParts.add(0);
+      }
 
       for (int i = 0; i < 3; i++) {
         if (latestParts[i] > currentParts[i]) return true;

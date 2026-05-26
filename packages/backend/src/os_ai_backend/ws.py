@@ -27,6 +27,7 @@ from os_ai_core.application.use_cases.run_agent import RunAgentCommand, RunAgent
 from os_ai_core.tools.registry import ToolRegistry
 
 from os_ai_llm.config import LLM_PROVIDER as _DEFAULT_PROVIDER
+from .ws_approval import WebSocketApprovalAdapter
 from .ws_event_sink import WebSocketEventSink
 _PROVIDER_DISPLAY = {"anthropic": "Anthropic", "openai": "OpenAI"}
 
@@ -50,6 +51,8 @@ class WebSocketRPCHandler:
 
     def __init__(self) -> None:
         self._logger = logging.getLogger(LOGGER_NAME)
+        self._approval_adapters: dict[str, WebSocketApprovalAdapter] = {}
+        self._approval_lock = threading.Lock()
 
     async def handle(self, websocket: WebSocket) -> None:
         # Extract API keys from WebSocket query parameters (sent by frontend)
@@ -176,6 +179,20 @@ class WebSocketRPCHandler:
                         self._logger.warning("agent.cancel missing jobId")
                         ok = False
                     await self._send_result(websocket, req_id, {"ok": ok, "jobId": job_id})
+                elif method == "approval.respond":
+                    job_id = str(params.get("jobId") or "")
+                    approval_id = str(params.get("approvalId") or "")
+                    approved = params.get("approved") is True
+                    ok = False
+                    if job_id and approval_id:
+                        with self._approval_lock:
+                            adapter = self._approval_adapters.get(job_id)
+                        ok = adapter.respond(approval_id, approved) if adapter is not None else False
+                    await self._send_result(
+                        websocket,
+                        req_id,
+                        {"ok": ok, "jobId": job_id, "approvalId": approval_id},
+                    )
                 else:
                     await self._send_error(websocket, req_id, -32601, "Method not found")
         finally:
@@ -205,6 +222,9 @@ class WebSocketRPCHandler:
         loop = asyncio.get_running_loop()
 
         event_sink = WebSocketEventSink(websocket, loop, job_id, self._send_event)
+        approval = WebSocketApprovalAdapter(websocket, loop, job_id, self._send_event)
+        with self._approval_lock:
+            self._approval_adapters[job_id] = approval
 
         def _blocking_run() -> Dict[str, Any]:
             # Convert initial context from wire into Message[] if provided
@@ -254,6 +274,7 @@ class WebSocketRPCHandler:
                         llm=LegacyLLMGateway(client),
                         tools=tool_gateway,
                         events=event_sink,
+                        approval=approval,
                     ).execute(
                         RunAgentCommand(
                             job_id=job_id,
@@ -271,7 +292,7 @@ class WebSocketRPCHandler:
                     output_tokens = run_result.output_tokens
                     provider_context = run_result.provider_context
                 else:
-                    orch = Orchestrator(client, tools, tool_gateway=tool_gateway, use_application_runner=False)
+                    orch = Orchestrator(client, tools, tool_gateway=tool_gateway, approval=approval, use_application_runner=False)
                     messages = orch.run(
                         task_text,
                         tool_descs,
@@ -323,12 +344,17 @@ class WebSocketRPCHandler:
             result = await loop.run_in_executor(None, _locked_blocking_run)
         except Exception as exc:
             logging.getLogger(LOGGER_NAME).exception("Job failed: %s", exc)
+            await event_sink.drain()
             await self._send_event(websocket, "event.final", {"jobId": job_id, "status": "fail", "error": str(exc)})
             return
         finally:
             # Ensure job is always removed from manager
             jobs.remove(job_id)
+            approval.cancel_all()
+            with self._approval_lock:
+                self._approval_adapters.pop(job_id, None)
 
+        await event_sink.drain()
         await self._send_event(websocket, "event.final", {"jobId": job_id, **result})
         self._logger.info("agent.run completed job=%s status=%s", job_id, result.get("status"))
 

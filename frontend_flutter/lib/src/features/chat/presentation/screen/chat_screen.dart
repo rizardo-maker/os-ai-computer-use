@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -90,7 +89,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final toolbarHeight = isOverlay ? 36.0 : (isMacOS ? 38.0 : kToolbarHeight);
 
     return AppBar(
-      backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: bgAlpha),
+      backgroundColor:
+          Theme.of(context).colorScheme.surface.withValues(alpha: bgAlpha),
       surfaceTintColor: Colors.transparent,
       toolbarHeight: toolbarHeight,
       titleSpacing: titleSpacing,
@@ -276,10 +276,13 @@ class _AppBarTitle extends StatelessWidget {
               tooltip: 'Chat list',
               onPressed: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ChatListOverlayScreen()),
+                  MaterialPageRoute(
+                      builder: (_) => const ChatListOverlayScreen()),
                 );
               },
-              icon: Icon(Icons.menu, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              icon: Icon(Icons.menu,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             ),
@@ -289,7 +292,9 @@ class _AppBarTitle extends StatelessWidget {
                 final s = context.read<ChatStore?>();
                 s?.createNewChat();
               },
-              icon: Icon(Icons.add, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              icon: Icon(Icons.add,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             ),
@@ -388,7 +393,8 @@ class _ChatDropAreaState extends State<_ChatDropArea> {
 
   @override
   Widget build(BuildContext context) {
-    final overlayColor = Theme.of(context).colorScheme.primary.withValues(alpha: 0.08);
+    final overlayColor =
+        Theme.of(context).colorScheme.primary.withValues(alpha: 0.08);
     return Stack(
       children: [
         DropTarget(
@@ -406,26 +412,43 @@ class _ChatDropAreaState extends State<_ChatDropArea> {
             for (final x in details.files) {
               try {
                 // Prefer native file path when available
-                if (x.path != null && x.path!.isNotEmpty && await File(x.path!).exists()) {
+                if (x.path != null &&
+                    x.path!.isNotEmpty &&
+                    await File(x.path!).exists()) {
                   final f = File(x.path!);
                   final name = f.uri.pathSegments.last;
-                  final ext = name.split('.').length > 1 ? name.split('.').last.toLowerCase() : '';
-                  if (!allowed.contains(ext)) { store?.fail(name, 'unsupported type'); continue; }
+                  final ext = name.split('.').length > 1
+                      ? name.split('.').last.toLowerCase()
+                      : '';
+                  if (!allowed.contains(ext)) {
+                    store?.fail(name, 'unsupported type');
+                    continue;
+                  }
                   final stat = await f.stat();
-                  if (stat.size > maxBytes) { store?.fail(name, 'too large'); continue; }
+                  if (stat.size > maxBytes) {
+                    store?.fail(name, 'too large');
+                    continue;
+                  }
                   final bytes = await f.readAsBytes();
                   final cmp = await compressIfNeeded(Uint8List.fromList(bytes));
                   final out = cmp.bytes;
                   final previewB64 = await makePreviewBase64(out);
                   var canceled = false;
                   VoidCallback? cancelNetwork;
-                  store?.start(name, out.length, onCancel: () { canceled = true; cancelNetwork?.call(); }, previewBytes: out.length > 2 * 1024 * 1024 ? null : out);
+                  store?.start(name, out.length, onCancel: () {
+                    canceled = true;
+                    cancelNetwork?.call();
+                  }, previewBytes: out.length > 2 * 1024 * 1024 ? null : out);
                   await repo.uploadFile(
                     name,
                     out,
                     mime: cmp.mime,
-                    onProgress: (s, t){ if (!canceled) store?.progress(name, s, t); },
-                    onCreateCancel: (fn){ cancelNetwork = fn; },
+                    onProgress: (s, t) {
+                      if (!canceled) store?.progress(name, s, t);
+                    },
+                    onCreateCancel: (fn) {
+                      cancelNetwork = fn;
+                    },
                     previewBase64: previewB64,
                   );
                   store?.complete(name);
@@ -433,19 +456,37 @@ class _ChatDropAreaState extends State<_ChatDropArea> {
                   final data = await x.readAsBytes();
                   final cmp2 = await compressIfNeeded(Uint8List.fromList(data));
                   final name = x.name.isNotEmpty ? x.name : 'file.bin';
-                  final ext = name.split('.').length > 1 ? name.split('.').last.toLowerCase() : '';
-                  if (!allowed.contains(ext)) { store?.fail(name, 'unsupported type'); continue; }
-                  if (cmp2.bytes.length > maxBytes) { store?.fail(name, 'too large'); continue; }
+                  final ext = name.split('.').length > 1
+                      ? name.split('.').last.toLowerCase()
+                      : '';
+                  if (!allowed.contains(ext)) {
+                    store?.fail(name, 'unsupported type');
+                    continue;
+                  }
+                  if (cmp2.bytes.length > maxBytes) {
+                    store?.fail(name, 'too large');
+                    continue;
+                  }
                   var canceled = false;
                   VoidCallback? cancelNetwork;
                   final previewB64 = await makePreviewBase64(cmp2.bytes);
-                  store?.start(name, cmp2.bytes.length, onCancel: () { canceled = true; cancelNetwork?.call(); }, previewBytes: cmp2.bytes.length > 2 * 1024 * 1024 ? null : cmp2.bytes);
+                  store?.start(name, cmp2.bytes.length, onCancel: () {
+                    canceled = true;
+                    cancelNetwork?.call();
+                  },
+                      previewBytes: cmp2.bytes.length > 2 * 1024 * 1024
+                          ? null
+                          : cmp2.bytes);
                   await repo.uploadFile(
                     name,
                     cmp2.bytes,
                     mime: cmp2.mime,
-                    onProgress: (s, t){ if (!canceled) store?.progress(name, s, t); },
-                    onCreateCancel: (fn){ cancelNetwork = fn; },
+                    onProgress: (s, t) {
+                      if (!canceled) store?.progress(name, s, t);
+                    },
+                    onCreateCancel: (fn) {
+                      cancelNetwork = fn;
+                    },
                     previewBase64: previewB64,
                   );
                   store?.complete(name);
@@ -462,11 +503,16 @@ class _ChatDropAreaState extends State<_ChatDropArea> {
                 color: overlayColor,
                 alignment: Alignment.center,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)),
+                    border: Border.all(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: 0.3)),
                   ),
                   child: Text(
                     'Drop files to attach',
@@ -496,12 +542,14 @@ class _ConnectionErrorBanner extends StatelessWidget {
       color: colorScheme.errorContainer,
       child: Row(
         children: [
-          Icon(Icons.error_outline, size: 18, color: colorScheme.onErrorContainer),
+          Icon(Icons.error_outline,
+              size: 18, color: colorScheme.onErrorContainer),
           const SizedBox(width: 8),
           Expanded(
             child: SelectableText(
               errorText,
-              style: TextStyle(fontSize: 12, color: colorScheme.onErrorContainer),
+              style:
+                  TextStyle(fontSize: 12, color: colorScheme.onErrorContainer),
             ),
           ),
           const SizedBox(width: 8),
@@ -510,10 +558,13 @@ class _ConnectionErrorBanner extends StatelessWidget {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: errorText));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Error copied'), duration: Duration(seconds: 1)),
+                const SnackBar(
+                    content: Text('Error copied'),
+                    duration: Duration(seconds: 1)),
               );
             },
-            icon: Icon(Icons.copy, size: 16, color: colorScheme.onErrorContainer),
+            icon:
+                Icon(Icons.copy, size: 16, color: colorScheme.onErrorContainer),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
           ),
@@ -523,7 +574,8 @@ class _ConnectionErrorBanner extends StatelessWidget {
               final store = context.read<ChatStore?>();
               store?.init();
             },
-            icon: Icon(Icons.refresh, size: 18, color: colorScheme.onErrorContainer),
+            icon: Icon(Icons.refresh,
+                size: 18, color: colorScheme.onErrorContainer),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
           ),

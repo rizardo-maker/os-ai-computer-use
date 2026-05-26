@@ -71,8 +71,7 @@ class ApiKeyValidator {
     return _validateForProvider(apiKey, ApiProvider.openai);
   }
 
-  ValidationResult _validateForProvider(
-      String apiKey, ApiProvider provider) {
+  ValidationResult _validateForProvider(String apiKey, ApiProvider provider) {
     if (apiKey.isEmpty) {
       return ValidationResult.invalid('API key cannot be empty');
     }

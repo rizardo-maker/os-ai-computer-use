@@ -119,7 +119,7 @@ def test_provider_context_roundtrip(client):
 
 
 def test_safety_checks_roundtrip(client):
-    """pending_safety_checks are propagated to acknowledged_safety_checks."""
+    """pending_safety_checks are only acknowledged after application approval."""
     safety = [MagicMock(id="sc_1", code="sensitive_domain", message="Banking site detected")]
     resp = _make_mock_response("resp_1", [
         _make_computer_call("call_1", [_make_action("screenshot")], safety_checks=safety),
@@ -147,7 +147,13 @@ def test_safety_checks_roundtrip(client):
     )
     msg = client.format_tool_result(tr)
 
-    # Verify acknowledged_safety_checks in output
+    # No approval means no silent acknowledgement.
+    pp = msg.content[0]
+    assert isinstance(pp, ProviderPart)
+    assert "acknowledged_safety_checks" not in pp.data
+
+    tr.metadata["_openai_safety_checks_approved"] = True
+    msg = client.format_tool_result(tr)
     pp = msg.content[0]
     assert isinstance(pp, ProviderPart)
     output_data = pp.data

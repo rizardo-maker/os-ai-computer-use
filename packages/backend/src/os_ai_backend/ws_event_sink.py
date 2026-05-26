@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 from typing import Any, Awaitable, Callable
 
 from fastapi import WebSocket
@@ -26,6 +27,7 @@ class WebSocketEventSink(EventSink):
         self._job_id = job_id
         self._send_event = send_event
         self._legacy = CallbackEventSink(self.emit_legacy)
+        self._pending: list[concurrent.futures.Future[Any]] = []
 
     def emit(self, event: AgentEvent) -> None:
         self._legacy.emit(event)
@@ -56,4 +58,14 @@ class WebSocketEventSink(EventSink):
             self._schedule("event.usage", {**payload, "jobId": self._job_id})
 
     def _schedule(self, method: str, payload: dict[str, Any]) -> None:
-        asyncio.run_coroutine_threadsafe(self._send_event(self._websocket, method, payload), self._loop)
+        future = asyncio.run_coroutine_threadsafe(self._send_event(self._websocket, method, payload), self._loop)
+        self._pending = [item for item in self._pending if not item.done()]
+        self._pending.append(future)
+
+    async def drain(self) -> None:
+        pending = [item for item in self._pending if not item.done()]
+        self._pending = pending
+        if not pending:
+            return
+        await asyncio.gather(*(asyncio.wrap_future(item) for item in pending), return_exceptions=True)
+        self._pending = [item for item in self._pending if not item.done()]

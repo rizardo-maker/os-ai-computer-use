@@ -8,7 +8,8 @@ class ChatSession extends Equatable {
   final int totalInputTokens;
   final int totalOutputTokens;
   final String? lastMessageText;
-  final String? lastResponseId; // OpenAI previous_response_id for session resume
+  final String?
+      lastResponseId; // OpenAI previous_response_id for session resume
 
   const ChatSession({
     required this.id,
@@ -45,11 +46,13 @@ class ChatSession extends Equatable {
 
   @override
   List<Object?> get props => [
-        id, title, createdAt, totalUsd,
-        totalInputTokens, totalOutputTokens,
-        lastMessageText, lastResponseId,
+        id,
+        title,
+        createdAt,
+        totalUsd,
+        totalInputTokens,
+        totalOutputTokens,
+        lastMessageText,
+        lastResponseId,
       ];
 }
-
-
-

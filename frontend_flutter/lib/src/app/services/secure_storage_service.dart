@@ -31,7 +31,8 @@ class SecureStorageService {
   /// Derive a 32-byte AES key from machine-specific data + app salt.
   enc.Key _deriveKey() {
     final host = Platform.localHostname;
-    final user = Platform.environment['USER'] ?? Platform.environment['USERNAME'] ?? '';
+    final user =
+        Platform.environment['USER'] ?? Platform.environment['USERNAME'] ?? '';
     final raw = 'os-ai:$host:$user:f7a3c9e1-salt';
     final hash = sha256.convert(utf8.encode(raw));
     return enc.Key(Uint8List.fromList(hash.bytes));
@@ -45,12 +46,14 @@ class SecureStorageService {
   }
 
   String _encrypt(String plaintext) {
-    final encrypter = enc.Encrypter(enc.AES(_deriveKey(), mode: enc.AESMode.cbc));
+    final encrypter =
+        enc.Encrypter(enc.AES(_deriveKey(), mode: enc.AESMode.cbc));
     return encrypter.encrypt(plaintext, iv: _deriveIV()).base64;
   }
 
   String _decrypt(String cipherBase64) {
-    final encrypter = enc.Encrypter(enc.AES(_deriveKey(), mode: enc.AESMode.cbc));
+    final encrypter =
+        enc.Encrypter(enc.AES(_deriveKey(), mode: enc.AESMode.cbc));
     return encrypter.decrypt64(cipherBase64, iv: _deriveIV());
   }
 
@@ -113,26 +116,31 @@ class SecureStorageService {
 
   // Anthropic API Key
 
-  Future<void> saveAnthropicApiKey(String apiKey) => _set(_anthropicApiKeyKey, apiKey);
+  Future<void> saveAnthropicApiKey(String apiKey) =>
+      _set(_anthropicApiKeyKey, apiKey);
   Future<String?> getAnthropicApiKey() => _get(_anthropicApiKeyKey);
-  Future<bool> hasAnthropicApiKey() async => (await getAnthropicApiKey()) != null;
+  Future<bool> hasAnthropicApiKey() async =>
+      (await getAnthropicApiKey()) != null;
   Future<void> deleteAnthropicApiKey() => _remove(_anthropicApiKeyKey);
 
   // OpenAI API Key
 
-  Future<void> saveOpenAIApiKey(String apiKey) => _set(_openaiApiKeyKey, apiKey);
+  Future<void> saveOpenAIApiKey(String apiKey) =>
+      _set(_openaiApiKeyKey, apiKey);
   Future<String?> getOpenAIApiKey() => _get(_openaiApiKeyKey);
   Future<bool> hasOpenAIApiKey() async => (await getOpenAIApiKey()) != null;
   Future<void> deleteOpenAIApiKey() => _remove(_openaiApiKeyKey);
 
   // Active provider
 
-  Future<void> saveActiveProvider(String provider) => _set(_activeProviderKey, provider);
+  Future<void> saveActiveProvider(String provider) =>
+      _set(_activeProviderKey, provider);
   Future<String?> getActiveProvider() => _get(_activeProviderKey);
 
   // User preferences
 
-  Future<void> saveUserPreferences(String prefs) => _set(_userPreferencesKey, prefs);
+  Future<void> saveUserPreferences(String prefs) =>
+      _set(_userPreferencesKey, prefs);
   Future<String?> getUserPreferences() => _get(_userPreferencesKey);
   Future<void> deleteUserPreferences() => _remove(_userPreferencesKey);
 

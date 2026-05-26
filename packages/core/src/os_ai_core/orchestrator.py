@@ -106,7 +106,11 @@ class Orchestrator:
         initial_messages: Optional[List[Message]],
         initial_provider_context: Optional[Dict[str, Any]],
     ) -> List[Message]:
-        result = LegacyOrchestratorRunner(self._client, self._tools).run(
+        result = LegacyOrchestratorRunner(
+            self._client,
+            self._tool_gateway,
+            approval=self._approval,
+        ).run(
             task=task,
             tool_descriptors=tool_descriptors,
             system=system,

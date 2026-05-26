@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 
 import pyautogui
 
+from os_ai_os.config import PYAUTO_FAILSAFE, PYAUTO_PAUSE_SECONDS
 from os_ai_os.platform.drivers import PlatformDrivers
 from os_ai_os.ports.mouse import Mouse
 from os_ai_os.ports.keyboard import Keyboard
@@ -14,8 +15,15 @@ from os_ai_os.ports.sound import Sound
 from os_ai_os.ports.permissions import Permissions
 from os_ai_os.ports.types import Capabilities, Size
 
+pyautogui.PAUSE = PYAUTO_PAUSE_SECONDS
+pyautogui.FAILSAFE = PYAUTO_FAILSAFE
+
 
 class WindowsMouse:
+    def position(self) -> Tuple[int, int]:
+        x, y = pyautogui.position()
+        return int(x), int(y)
+
     def move_to(self, x: int, y: int, *, duration_ms: int = 0) -> None:
         dur = max(0.0, float(duration_ms) / 1000.0)
         pyautogui.moveTo(int(x), int(y), duration=dur)
@@ -70,6 +78,12 @@ class WindowsKeyboard:
             pyautogui.press(keys[0])
         else:
             pyautogui.hotkey(*keys)
+
+    def key_down(self, key: str) -> None:
+        pyautogui.keyDown(key)
+
+    def key_up(self, key: str) -> None:
+        pyautogui.keyUp(key)
 
     def type_text(self, text: str, *, wpm: int = 180) -> None:
         interval = 0.02
@@ -141,5 +155,4 @@ def make_drivers() -> PlatformDrivers:
         sound=WindowsSound(),
         capabilities=caps,
     )
-
 

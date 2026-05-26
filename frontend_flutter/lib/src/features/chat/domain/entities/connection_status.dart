@@ -5,6 +5,3 @@ enum ConnectionStatus {
   disconnected,
   error,
 }
-
-
-

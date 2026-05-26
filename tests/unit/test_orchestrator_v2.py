@@ -6,6 +6,7 @@ import pytest
 
 from os_ai_llm.interfaces import LLMClient
 from os_ai_llm.types import Message, ToolDescriptor, LLMResponse, ToolCall, Usage, TextPart
+from os_ai_core.application.ports.approval import ApprovalDecision
 from os_ai_core.tools.registry import ToolRegistry
 from os_ai_core.orchestrator import Orchestrator
 
@@ -32,6 +33,16 @@ class DummyLLM(LLMClient):
 
     def format_tool_result(self, result):
         return Message(role="user", content=[TextPart(text="tool_result")])
+
+
+class FakeApproval:
+    def __init__(self, decision: ApprovalDecision) -> None:
+        self.decision = decision
+        self.requests = []
+
+    def request_approval(self, request):
+        self.requests.append(request)
+        return self.decision
 
 
 def test_orchestrator_runs_and_handles_tool_call(monkeypatch):
@@ -85,3 +96,48 @@ def test_orchestrator_can_use_legacy_runner_rollback_path(monkeypatch):
 
     assert captured_args["_openai_batch"] is True
     assert captured_args["_openai_actions"] == [{"action": "screenshot"}]
+
+
+def test_legacy_runner_stops_on_denied_provider_safety_check(monkeypatch):
+    executed = False
+    reg = ToolRegistry()
+
+    def handler(args):
+        nonlocal executed
+        executed = True
+        return [{"type": "text", "text": "ok"}]
+
+    reg.register("computer", handler)
+
+    class SafetyLLM(DummyLLM):
+        def generate(self, messages, tools, system=None, tool_choice="auto", max_tokens=1024, allow_parallel_tools=True, provider_context=None):
+            self.calls += 1
+            if self.calls == 1:
+                return LLMResponse(
+                    messages=[Message(role="assistant", content=[TextPart(text="need click")])],
+                    tool_calls=[
+                        ToolCall(
+                            id="1",
+                            name="computer",
+                            args={"action": "left_click"},
+                            metadata={
+                                "provider_safety_checks": [
+                                    {"id": "safe-1", "code": "sensitive_domain", "message": "Sensitive site"}
+                                ]
+                            },
+                        )
+                    ],
+                    usage=Usage(input_tokens=1, output_tokens=1),
+                )
+            return LLMResponse(messages=[], tool_calls=[], usage=Usage(input_tokens=1, output_tokens=1))
+
+    monkeypatch.setenv("OS_AI_USE_APPLICATION_RUNNER", "0")
+    approval = FakeApproval(ApprovalDecision.DENIED)
+    client = SafetyLLM()
+    orch = Orchestrator(client, reg, approval=approval)
+
+    orch.run("task", [ToolDescriptor(name="computer", kind="computer_use")], system=None, max_iterations=2)
+
+    assert client.calls == 1
+    assert executed is False
+    assert len(approval.requests) == 1

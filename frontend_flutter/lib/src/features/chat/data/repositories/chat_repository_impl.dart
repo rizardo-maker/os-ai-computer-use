@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -20,7 +19,8 @@ class ChatRepositoryImpl implements ChatRepository {
   String? Function() _userPreferencesGetter;
 
   ChatRepositoryImpl(this._ws, this._rest)
-      : _wsUriProvider = (() => Uri.parse('ws://127.0.0.1:8765/ws?token=secret')),
+      : _wsUriProvider =
+            (() => Uri.parse('ws://127.0.0.1:8765/ws?token=secret')),
         _activeProviderGetter = (() => 'anthropic'),
         _userPreferencesGetter = (() => null);
 
@@ -48,7 +48,7 @@ class ChatRepositoryImpl implements ChatRepository {
   bool _wsListening = false;
   String? _currentJobId;
   String? _thinkingMsgId;
-  int _historyPairsLimit = 6;
+  final int _historyPairsLimit = 6;
   final List<ChatMessage> _historyText = [];
   final Map<String, List<ChatMessage>> _historyTextByChat = {};
   final Map<String, List<Map<String, String>>> _albumBuffer = {};
@@ -67,7 +67,9 @@ class ChatRepositoryImpl implements ChatRepository {
   String? _activeChatId;
   final Map<String, String> _jobChat = {}; // jobId -> chatId
   final Map<String, String> _pendingJobs = {}; // reqId -> chatId
-  final Map<String, String> _lastResponseIdByChat = {}; // chatId -> previous_response_id
+  final Map<String, Completer<Map<String, dynamic>>> _pendingRpc = {};
+  final Map<String, String> _lastResponseIdByChat =
+      {}; // chatId -> previous_response_id
 
   @override
   Stream<ChatMessage> messages() => _msgCtrl.stream;
@@ -91,6 +93,7 @@ class ChatRepositoryImpl implements ChatRepository {
       if (!_wsListening) {
         _wsListening = true;
         _wsMessagesSub = _ws.messages.listen(_onWs, onDone: () {
+          _completePendingRpcWithError('connection_closed');
           _runningCtrl.add(false);
           _msgCtrl.add(ChatMessage(
             id: _nextId(),
@@ -100,6 +103,7 @@ class ChatRepositoryImpl implements ChatRepository {
             text: 'Server connection closed.',
           ));
         }, onError: (_) {
+          _completePendingRpcWithError('connection_error');
           _runningCtrl.add(false);
           _msgCtrl.add(ChatMessage(
             id: _nextId(),
@@ -121,28 +125,16 @@ class ChatRepositoryImpl implements ChatRepository {
       debugPrint('createSession error: $e');
       rethrow;
     }
-    // Immediately probe session to force early server response -> flips status to connected when backend is alive
-    final pingId = _nextId();
-    _ws.send({'jsonrpc': '2.0', 'id': pingId, 'method': 'session.create', 'params': {}});
-    final completer = Completer<String>();
-    final id = _nextId();
-    void sub(Map<String, dynamic> m) {
-      if (m['id'] == id && m['result'] is Map<String, dynamic>) {
-        final r = m['result'] as Map<String, dynamic>;
-        _sessionId = r['sessionId'] as String?;
-        completer.complete(_sessionId ?? '');
-      }
+    final response = await _sendRpc(
+      'session.create',
+      {'provider': provider},
+    );
+    final result = response['result'];
+    if (result is Map<String, dynamic>) {
+      _sessionId = result['sessionId']?.toString();
+      return _sessionId ?? '';
     }
-    final s = _ws.messages.listen(sub);
-    _ws.send({
-      'jsonrpc': '2.0',
-      'id': id,
-      'method': 'session.create',
-      'params': {'provider': provider},
-    });
-    final sid = await completer.future.timeout(const Duration(seconds: 5), onTimeout: () => '');
-    await s.cancel();
-    return sid;
+    return '';
   }
 
   @override
@@ -156,7 +148,8 @@ class ChatRepositoryImpl implements ChatRepository {
     for (final m in messages.reversed) {
       if ((m.kind == 'text' || m.kind == 'thought') &&
           (m.role == 'user' || m.role == 'assistant') &&
-          m.text != null && m.text!.trim().isNotEmpty) {
+          m.text != null &&
+          m.text!.trim().isNotEmpty) {
         list.add(m);
         if (list.length >= _historyPairsLimit * 2) break;
       }
@@ -176,10 +169,13 @@ class ChatRepositoryImpl implements ChatRepository {
   void _onWs(Map<String, dynamic> m) {
     if (kDebugMode) {
       // ignore: avoid_print
-      print('[Repo] WS <- ' + (m['method']?.toString() ?? 'resp id=' + (m['id']?.toString() ?? 'unknown')));
+      final label =
+          m['method']?.toString() ?? 'resp id=${m['id'] ?? 'unknown'}';
+      print('[Repo] WS <- $label');
     }
     // Track last message time to stabilize effective connection status
     _emitEffectiveStatus();
+    _completePendingRpc(m);
     if (m.containsKey('method')) {
       final method = m['method'] as String;
       if (method == 'event.log') {
@@ -187,17 +183,19 @@ class ChatRepositoryImpl implements ChatRepository {
         final msg = (p['message'] as String?) ?? '';
         if (kDebugMode) {
           // ignore: avoid_print
-          print('[Repo] event.log: ' + msg);
+          print('[Repo] event.log: $msg');
         }
         // Если это tool_result ок, рисуем галочку
-        if (msg.startsWith('done:') || msg.startsWith('ok') || msg.toLowerCase().contains('tool_result')) {
+        if (msg.startsWith('done:') ||
+            msg.startsWith('ok') ||
+            msg.toLowerCase().contains('tool_result')) {
           final lastAction = _lastActionNameFromQueue();
           _msgCtrl.add(ChatMessage(
             id: _nextId(),
             role: 'assistant',
             ts: DateTime.now(),
             kind: 'action',
-            text: '✔ ' + (lastAction ?? 'ok'),
+            text: '✔ ${lastAction ?? 'ok'}',
             meta: {'name': lastAction ?? 'ok', 'status': 'ok'},
           ));
           return;
@@ -210,12 +208,14 @@ class ChatRepositoryImpl implements ChatRepository {
           text: msg.isEmpty ? null : msg,
         );
         _msgCtrl.add(cmThought);
-        _recordHistory(cmThought, chatId: _jobChat[_currentJobId ?? ''] ?? _activeChatId);
+        _recordHistory(cmThought,
+            chatId: _jobChat[_currentJobId ?? ''] ?? _activeChatId);
       } else if (method == 'event.screenshot') {
         final p = m['params'] as Map<String, dynamic>;
         if (kDebugMode) {
           // ignore: avoid_print
-          print('[Repo] event.screenshot len=' + ((p['data'] as String?)?.length.toString() ?? '0'));
+          final len = (p['data'] as String?)?.length ?? 0;
+          print('[Repo] event.screenshot len=$len');
         }
         _msgCtrl.add(ChatMessage(
           id: _nextId(),
@@ -229,9 +229,12 @@ class ChatRepositoryImpl implements ChatRepository {
         final name = p['name'] as String?;
         final status = p['status'] as String?;
         final meta = (p['meta'] as Map?)?.cast<String, dynamic>();
+        if (_handleApprovalToolResult(p, name, meta)) {
+          return;
+        }
         if (kDebugMode) {
           // ignore: avoid_print
-          print('[Repo] event.action: ' + (name ?? '') + ' [' + (status ?? '') + ']');
+          print('[Repo] event.action: ${name ?? ''} [${status ?? ''}]');
         }
         _rememberActionName(meta, name);
         final cmAction = ChatMessage(
@@ -243,6 +246,26 @@ class ChatRepositoryImpl implements ChatRepository {
           meta: {'name': name, 'status': status, 'meta': meta},
         );
         _msgCtrl.add(cmAction);
+      } else if (method == 'event.approval') {
+        final p = m['params'] as Map<String, dynamic>;
+        final summary = (p['summary'] as String?) ?? 'Tool approval required';
+        final tool = (p['tool'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{};
+        _msgCtrl.add(ChatMessage(
+          id: _nextId(),
+          role: 'system',
+          ts: DateTime.now(),
+          kind: 'approval',
+          text: summary,
+          meta: {
+            'jobId': p['jobId']?.toString() ?? '',
+            'approvalId': p['approvalId']?.toString() ?? '',
+            'risk': p['risk']?.toString() ?? '',
+            'toolName': tool['name']?.toString() ?? '',
+            'toolArgs': tool['args'],
+            'expiresInSeconds': p['expiresInSeconds'],
+          },
+        ));
       } else if (method == 'event.progress') {
         final p = m['params'] as Map<String, dynamic>;
         final stage = (p['stage'] as String? ?? '').toLowerCase();
@@ -256,11 +279,13 @@ class ChatRepositoryImpl implements ChatRepository {
         final inTok = (p['input_tokens'] as num? ?? 0).toInt();
         final outTok = (p['output_tokens'] as num? ?? 0).toInt();
         // Use pre-computed cost from backend (provider-aware) if available, fallback to local rates
-        final inputUsd = (p['input_cost'] as num?)?.toDouble() ?? CostRates.inputUsdFor(inTok);
-        final outputUsd = (p['output_cost'] as num?)?.toDouble() ?? CostRates.outputUsdFor(outTok);
+        final inputUsd = (p['input_cost'] as num?)?.toDouble() ??
+            CostRates.inputUsdFor(inTok);
+        final outputUsd = (p['output_cost'] as num?)?.toDouble() ??
+            CostRates.outputUsdFor(outTok);
         if (kDebugMode) {
           // ignore: avoid_print
-          print('[Repo] event.usage in=' + inTok.toString() + ' out=' + outTok.toString());
+          print('[Repo] event.usage in=$inTok out=$outTok');
         }
         final u = CostUsage(
           inputTokens: inTok,
@@ -274,7 +299,10 @@ class ChatRepositoryImpl implements ChatRepository {
           role: 'assistant',
           ts: DateTime.now(),
           kind: 'usage',
-          text: 'in=' + inTok.toString() + ' out=' + outTok.toString() + '  cost=\$' + u.totalUsd.toStringAsFixed(6) + ' (input=\$' + u.inputUsd.toStringAsFixed(6) + ', output=\$' + u.outputUsd.toStringAsFixed(6) + ')',
+          text:
+              'in=$inTok out=$outTok  cost=\$${u.totalUsd.toStringAsFixed(6)} '
+              '(input=\$${u.inputUsd.toStringAsFixed(6)}, '
+              'output=\$${u.outputUsd.toStringAsFixed(6)})',
           meta: {
             'inputTokens': inTok,
             'outputTokens': outTok,
@@ -289,6 +317,7 @@ class ChatRepositoryImpl implements ChatRepository {
         final p = m['params'] as Map<String, dynamic>;
         final status = p['status'] as String?;
         final error = p['error'] as String?;
+        final jobId = p['jobId']?.toString();
         if (kDebugMode) {
           // ignore: avoid_print
           print('[Repo] event.final status=$status');
@@ -303,6 +332,9 @@ class ChatRepositoryImpl implements ChatRepository {
             text: error,
             meta: const {'isError': true},
           ));
+        }
+        if (jobId != null && jobId.isNotEmpty) {
+          _emitRemoveApprovalsForJob(jobId);
         }
         // remove the Thinking... bubble when job finishes
         if (_thinkingMsgId != null) {
@@ -349,13 +381,19 @@ class ChatRepositoryImpl implements ChatRepository {
                 _currentJobId = jobId;
                 if (kDebugMode) {
                   // ignore: avoid_print
-                  print('[Repo] Updated _currentJobId from reqId=$respId to jobId=$jobId');
+                  print(
+                      '[Repo] Updated _currentJobId from reqId=$respId to jobId=$jobId');
                 }
                 // Если отмена была запрошена до получения jobId — отправляем cancel сейчас
                 if (_pendingCancel) {
                   _pendingCancel = false;
                   final cid = _nextId();
-                  _ws.send({'jsonrpc': '2.0', 'id': cid, 'method': 'agent.cancel', 'params': {'jobId': jobId}});
+                  _ws.send({
+                    'jsonrpc': '2.0',
+                    'id': cid,
+                    'method': 'agent.cancel',
+                    'params': {'jobId': jobId}
+                  });
                 }
               }
             }
@@ -365,13 +403,103 @@ class ChatRepositoryImpl implements ChatRepository {
     } catch (_) {}
   }
 
+  void _completePendingRpc(Map<String, dynamic> message) {
+    final id = message['id']?.toString();
+    if (id == null) return;
+    final pending = _pendingRpc.remove(id);
+    if (pending == null || pending.isCompleted) return;
+    pending.complete(message);
+  }
+
+  Future<Map<String, dynamic>> _sendRpc(
+    String method,
+    Map<String, dynamic> params, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final id = _nextId();
+    final pending = Completer<Map<String, dynamic>>();
+    _pendingRpc[id] = pending;
+    try {
+      _ws.send({
+        'jsonrpc': '2.0',
+        'id': id,
+        'method': method,
+        'params': params,
+      });
+    } catch (_) {
+      _pendingRpc.remove(id);
+      rethrow;
+    }
+    try {
+      return await pending.future.timeout(timeout);
+    } on TimeoutException {
+      _pendingRpc.remove(id);
+      return const <String, dynamic>{'error': 'timeout'};
+    }
+  }
+
+  void _completePendingRpcWithError(String code) {
+    final pending = List<Completer<Map<String, dynamic>>>.from(
+      _pendingRpc.values,
+    );
+    _pendingRpc.clear();
+    for (final completer in pending) {
+      if (!completer.isCompleted) {
+        completer.complete({'error': code});
+      }
+    }
+  }
+
+  bool _handleApprovalToolResult(
+    Map<String, dynamic> params,
+    String? name,
+    Map<String, dynamic>? meta,
+  ) {
+    if (name != 'tool_result') return false;
+    final text = meta?['text']?.toString() ?? '';
+    if (!text.contains('provider safety approval result:')) return false;
+    final jobId = params['jobId']?.toString();
+    if (jobId != null && jobId.isNotEmpty) {
+      _emitRemoveApprovalsForJob(jobId);
+    }
+    final decision = text.split('provider safety approval result:').last.trim();
+    if (decision == 'expired' || decision == 'unavailable') {
+      _msgCtrl.add(ChatMessage(
+        id: _nextId(),
+        role: 'system',
+        ts: DateTime.now(),
+        kind: 'system',
+        text: decision == 'expired'
+            ? 'Approval expired.'
+            : 'Approval is no longer available.',
+        meta: const {'isError': true},
+      ));
+    }
+    return true;
+  }
+
+  void _emitRemoveApprovalsForJob(String jobId) {
+    _msgCtrl.add(ChatMessage(
+      id: _nextId(),
+      role: 'assistant',
+      ts: DateTime.now(),
+      kind: 'control',
+      meta: {'removeApprovalsForJobId': jobId},
+    ));
+  }
+
   @override
   Future<String> runTask({required String task}) async {
     final id = _nextId();
     if (_activeChatId != null) {
       _pendingJobs[id] = _activeChatId!;
     }
-    final userMsg = ChatMessage(id: _nextId(), role: 'user', ts: DateTime.now(), kind: 'text', text: task);
+    final userMsg = ChatMessage(
+        id: _nextId(),
+        role: 'user',
+        ts: DateTime.now(),
+        kind: 'text',
+        text: task);
     _msgCtrl.add(userMsg);
     _recordHistory(userMsg, chatId: _activeChatId);
     // Remove existing thinking bubble if any (prevents duplicates)
@@ -386,7 +514,13 @@ class ChatRepositoryImpl implements ChatRepository {
       ));
     }
     _thinkingMsgId = _nextId();
-    _msgCtrl.add(ChatMessage(id: _thinkingMsgId!, role: 'assistant', ts: DateTime.now(), kind: 'thought', text: 'Thinking...', meta: const {'thinking': true}));
+    _msgCtrl.add(ChatMessage(
+        id: _thinkingMsgId!,
+        role: 'assistant',
+        ts: DateTime.now(),
+        kind: 'thought',
+        text: 'Thinking...',
+        meta: const {'thinking': true}));
     _runningCtrl.add(true);
     final userPrefs = _userPreferencesGetter();
     _ws.send({
@@ -398,8 +532,10 @@ class ChatRepositoryImpl implements ChatRepository {
         'provider': _activeProviderGetter(),
         'maxIterations': 30,
         'context': _buildContext(),
-        if (_pendingAttachments.isNotEmpty) 'attachments': List<Map<String, String?>>.from(_pendingAttachments),
-        if (_activeChatId != null && _lastResponseIdByChat.containsKey(_activeChatId!))
+        if (_pendingAttachments.isNotEmpty)
+          'attachments': List<Map<String, String?>>.from(_pendingAttachments),
+        if (_activeChatId != null &&
+            _lastResponseIdByChat.containsKey(_activeChatId!))
           'previous_response_id': _lastResponseIdByChat[_activeChatId!],
         if (userPrefs != null && userPrefs.isNotEmpty)
           'user_preferences': userPrefs,
@@ -419,7 +555,27 @@ class ChatRepositoryImpl implements ChatRepository {
       // ignore: avoid_print
       print('[Repo] Cancelling jobId=$jobId');
     }
-    _ws.send({'jsonrpc': '2.0', 'id': id, 'method': 'agent.cancel', 'params': {'jobId': jobId}});
+    _ws.send({
+      'jsonrpc': '2.0',
+      'id': id,
+      'method': 'agent.cancel',
+      'params': {'jobId': jobId}
+    });
+  }
+
+  @override
+  Future<bool> respondApproval({
+    required String jobId,
+    required String approvalId,
+    required bool approved,
+  }) async {
+    final response = await _sendRpc('approval.respond', {
+      'jobId': jobId,
+      'approvalId': approvalId,
+      'approved': approved,
+    });
+    final result = response['result'];
+    return result is Map && result['ok'] == true;
   }
 
   @override
@@ -434,42 +590,67 @@ class ChatRepositoryImpl implements ChatRepository {
     }
     // Немедленно погасим флаг выполнения, чтобы кнопка стоп скрылась в UI
     _runningCtrl.add(false);
-    _msgCtrl.add(ChatMessage(id: _nextId(), role: 'system', ts: DateTime.now(), kind: 'system', text: 'Stopped by user.'));
+    _msgCtrl.add(ChatMessage(
+        id: _nextId(),
+        role: 'system',
+        ts: DateTime.now(),
+        kind: 'system',
+        text: 'Stopped by user.'));
   }
 
   @override
-  Future<String> uploadFile(String name, List<int> bytes, {String? mime, void Function(int, int)? onProgress, void Function(void Function())? onCreateCancel, String? previewBase64, String? batchId, int? batchSize, int? batchIndex}) async {
+  Future<String> uploadFile(String name, List<int> bytes,
+      {String? mime,
+      void Function(int, int)? onProgress,
+      void Function(void Function())? onCreateCancel,
+      String? previewBase64,
+      String? batchId,
+      int? batchSize,
+      int? batchIndex}) async {
     // Retry with backoff and resume on connectivity
     bool cancelled = false;
     String id = '';
     Future<void> waitForConnectivity() async {
       try {
         final c = Connectivity();
-        var state = await c.checkConnectivity();
-        if (state == ConnectivityResult.none) {
-          await c.onConnectivityChanged.firstWhere((s) => s != ConnectivityResult.none);
+        final state = await c.checkConnectivity();
+        if (!_hasConnectivity(state)) {
+          await c.onConnectivityChanged
+              .firstWhere((state) => _hasConnectivity(state));
         }
       } catch (_) {}
     }
-    void _wrapOnCreateCancel(void Function() fn) {
+
+    void wrapOnCreateCancel(void Function() fn) {
       void wrapper() {
         cancelled = true;
-        try { fn(); } catch (_) {}
+        try {
+          fn();
+        } catch (_) {}
       }
-      try { onCreateCancel?.call(wrapper); } catch (_) {}
+
+      try {
+        onCreateCancel?.call(wrapper);
+      } catch (_) {}
     }
+
     int attempt = 0;
     while (true) {
       attempt += 1;
       try {
-        id = await _rest.uploadBytes(name, bytes, mime: mime, onProgress: onProgress, onCreateCancel: _wrapOnCreateCancel);
+        id = await _rest.uploadBytes(name, bytes,
+            mime: mime,
+            onProgress: onProgress,
+            onCreateCancel: wrapOnCreateCancel);
         break;
       } catch (e) {
         if (cancelled || attempt >= 3) {
           rethrow;
         }
         // backoff: 1s, 2s then wait connectivity
-        final delay = attempt == 1 ? const Duration(seconds: 1) : const Duration(seconds: 2);
+        final delay = attempt == 1
+            ? const Duration(seconds: 1)
+            : const Duration(seconds: 2);
         await Future.delayed(delay);
         await waitForConnectivity();
       }
@@ -495,7 +676,8 @@ class ChatRepositoryImpl implements ChatRepository {
 
     // Collect album items if batch is provided
     if (batchId != null && batchSize != null && batchSize > 1) {
-      final list = _albumBuffer.putIfAbsent(batchId, () => <Map<String, String>>[]);
+      final list =
+          _albumBuffer.putIfAbsent(batchId, () => <Map<String, String>>[]);
       _albumTarget[batchId] = batchSize;
       list.add({
         'fileId': id,
@@ -509,7 +691,7 @@ class ChatRepositoryImpl implements ChatRepository {
           role: 'user',
           ts: DateTime.now(),
           kind: 'attachment_album',
-          text: 'Album (' + list.length.toString() + ')',
+          text: 'Album (${list.length})',
           meta: {
             'items': List<Map<String, String>>.from(list),
           },
@@ -521,12 +703,17 @@ class ChatRepositoryImpl implements ChatRepository {
     return id;
   }
 
+  bool _hasConnectivity(List<ConnectivityResult> state) {
+    return state.any((item) => item != ConnectivityResult.none);
+  }
+
   @override
   Future<List<int>> downloadFile(String id) async {
     return await _rest.downloadBytes(id);
   }
 
-  String _formatActionText(String? name, String? status, Map<String, dynamic>? meta) {
+  String _formatActionText(
+      String? name, String? status, Map<String, dynamic>? meta) {
     if (meta == null || meta.isEmpty) {
       return '${name ?? 'action'} ${status != null ? '[$status]' : ''}';
     }
@@ -538,7 +725,11 @@ class ChatRepositoryImpl implements ChatRepository {
       final c = meta['coordinate'];
       return 'Move → ${_fmtCoord(c)}';
     }
-    if (n == 'left_click' || n == 'double_click' || n == 'triple_click' || n == 'right_click' || n == 'middle_click') {
+    if (n == 'left_click' ||
+        n == 'double_click' ||
+        n == 'triple_click' ||
+        n == 'right_click' ||
+        n == 'middle_click') {
       final c = meta['coordinate'];
       final label = n.replaceAll('_', ' ');
       return '${label[0].toUpperCase()}${label.substring(1)} ${_fmtCoord(c)}';
@@ -581,16 +772,6 @@ class ChatRepositoryImpl implements ChatRepository {
     return s.contains('-');
   }
 
-  String _formatPlannedActionText(String? name, Map<String, dynamic>? input) {
-    final b = StringBuffer('PLAN: ');
-    if (name != null) b.write(name);
-    if (input != null && input.isNotEmpty) {
-      b.write(' ');
-      b.write(input.toString());
-    }
-    return b.toString();
-  }
-
   void _startHealthChecks() {
     _healthTimer ??= Timer.periodic(const Duration(seconds: 5), (_) async {
       try {
@@ -600,7 +781,9 @@ class ChatRepositoryImpl implements ChatRepository {
         _lastHealthOk = false;
       }
       // If backend is healthy but WS isn't connected, try to (re)connect
-      if (_lastHealthOk && _lastWsStatus != ConnectionStatus.connected && !_wsConnecting) {
+      if (_lastHealthOk &&
+          _lastWsStatus != ConnectionStatus.connected &&
+          !_wsConnecting) {
         _wsConnecting = true;
         try {
           await _ws.connect(_wsUriProvider());
@@ -628,7 +811,9 @@ class ChatRepositoryImpl implements ChatRepository {
         break;
       case ConnectionStatus.connected:
         // treat as connected when WS is connected and last health check is OK
-        eff = _lastHealthOk ? ConnectionStatus.connected : ConnectionStatus.connecting;
+        eff = _lastHealthOk
+            ? ConnectionStatus.connected
+            : ConnectionStatus.connecting;
         break;
     }
     // de-duplicate to avoid UI flicker
@@ -641,11 +826,14 @@ class ChatRepositoryImpl implements ChatRepository {
   List<Map<String, String>> _buildContext({int maxPairs = 6}) {
     try {
       final list = <Map<String, String>>[];
-      final src = _activeChatId != null ? (_historyTextByChat[_activeChatId!] ?? _historyText) : _historyText;
+      final src = _activeChatId != null
+          ? (_historyTextByChat[_activeChatId!] ?? _historyText)
+          : _historyText;
       for (final m in src.take(maxPairs)) {
         final t = m.text?.trim();
         if (t == null || t.isEmpty) continue;
-        final role = (m.role == 'user' || m.role == 'assistant') ? m.role : 'assistant';
+        final role =
+            (m.role == 'user' || m.role == 'assistant') ? m.role : 'assistant';
         list.add({'role': role, 'text': t});
       }
       return list;
@@ -667,7 +855,8 @@ class ChatRepositoryImpl implements ChatRepository {
   void _recordHistory(ChatMessage m, {String? chatId}) {
     if (m.kind == 'text' || m.kind == 'thought') {
       if (chatId != null && chatId.isNotEmpty) {
-        final list = _historyTextByChat.putIfAbsent(chatId, () => <ChatMessage>[]);
+        final list =
+            _historyTextByChat.putIfAbsent(chatId, () => <ChatMessage>[]);
         list.insert(0, m);
         final cap = _historyPairsLimit * 2;
         if (list.length > cap) {
@@ -697,5 +886,3 @@ class ChatRepositoryImpl implements ChatRepository {
     await _statusCtrl.close();
   }
 }
-
-

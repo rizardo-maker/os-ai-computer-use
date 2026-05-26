@@ -1,31 +1,11 @@
 from __future__ import annotations
 
-from typing import Dict, Any, List, Tuple
-
+import base64
+import logging
 import os
 import sys
 import time
-import base64
-import logging
-
-try:
-    import pyautogui
-except (KeyError, Exception) as _pyautogui_err:
-    # On Linux, pyautogui's X11 backend (_pyautogui_x11.py:182) does
-    #   _display = Display(os.environ['DISPLAY'])
-    # at module level. This raises:
-    #   KeyError — if DISPLAY env var is not set
-    #   Xlib.error.DisplayConnectionError — if X server is unreachable
-    if sys.platform.startswith("linux") and (
-        isinstance(_pyautogui_err, KeyError)
-        or "display" in str(_pyautogui_err).lower()
-    ):
-        raise ImportError(
-            "pyautogui requires X11 display on Linux. "
-            "Ensure DISPLAY is set and X server is running. "
-            "If using Wayland, enable XWayland."
-        ) from None
-    raise
+from typing import Any, Callable, Dict, List, Tuple
 
 from os_ai_core.config import (
     LOGGER_NAME,
@@ -43,45 +23,66 @@ from os_ai_core.config import (
     SCREENSHOT_FORMAT,
     SCREENSHOT_JPEG_QUALITY,
 )
+from os_ai_os.api import get_drivers
 from os_ai_os.config import (
-    PYAUTO_PAUSE_SECONDS,
-    PYAUTO_FAILSAFE,
     DEFAULT_MOVE_SPEED_PPS,
     DEFAULT_DRAG_SPEED_PPS,
     MIN_MOVE_DURATION,
     MAX_MOVE_DURATION,
+    PREMOVE_HIGHLIGHT_DEFAULT_DURATION,
 )
-from os_ai_os.config import PREMOVE_HIGHLIGHT_DEFAULT_DURATION
-from os_ai_os.api import get_drivers
 
 
-def press_enter_mac():
-    """Press Enter via platform-native Quartz helper, falling back to pyautogui."""
-    try:
-        from os_ai_os_macos.keyboard import press_enter_mac as _pem
-        _pem()
-    except Exception:
-        pyautogui.press("enter")
-
-
-# Initialize PyAutoGUI basic settings
-pyautogui.PAUSE = PYAUTO_PAUSE_SECONDS
-pyautogui.FAILSAFE = PYAUTO_FAILSAFE
-
-# Exposed for test shim to read last saved screenshot path via main
 LAST_SCREENSHOT_PATH: str = ""
 
+SCREEN_W = 1
+SCREEN_H = 1
+MODEL_DISPLAY_W = 1
+MODEL_DISPLAY_H = 1
+DYNAMIC_X_SCALE = 1.0
+DYNAMIC_Y_SCALE = 1.0
+MODEL_CONTENT_W = 1
+MODEL_CONTENT_H = 1
+MODEL_LB_OFFSET_X = 0
+MODEL_LB_OFFSET_Y = 0
+CONTENT_X_SCALE = 1.0
+CONTENT_Y_SCALE = 1.0
+_GEOMETRY_READY = False
 
-# ---- Geometry setup (duplicated from legacy main, kept intact) ----
-SCREEN_W, SCREEN_H = pyautogui.size()
 
-if (SCREENSHOT_MODE or "downscale").lower() == "native":
-    MODEL_DISPLAY_W = SCREEN_W
-    MODEL_DISPLAY_H = SCREEN_H
-    DYNAMIC_X_SCALE = 1.0
-    DYNAMIC_Y_SCALE = 1.0
-else:
-    if VIRTUAL_DISPLAY_ENABLED:
+def _drivers():
+    return get_drivers()
+
+
+def _duration_ms(seconds: float) -> int:
+    return max(0, int(round(float(seconds) * 1000.0)))
+
+
+def _is_input_fail_safe(exc: BaseException) -> bool:
+    name = exc.__class__.__name__.lower()
+    text = str(exc).lower()
+    return "failsafe" in name or "fail-safe" in text or "fail safe" in text
+
+
+def _ensure_geometry(*, refresh: bool = False) -> None:
+    global SCREEN_W, SCREEN_H
+    global MODEL_DISPLAY_W, MODEL_DISPLAY_H, DYNAMIC_X_SCALE, DYNAMIC_Y_SCALE
+    global MODEL_CONTENT_W, MODEL_CONTENT_H, MODEL_LB_OFFSET_X, MODEL_LB_OFFSET_Y
+    global CONTENT_X_SCALE, CONTENT_Y_SCALE, _GEOMETRY_READY
+
+    if _GEOMETRY_READY and not refresh:
+        return
+
+    size = _drivers().screen.size()
+    SCREEN_W = max(1, int(size.width))
+    SCREEN_H = max(1, int(size.height))
+
+    if (SCREENSHOT_MODE or "downscale").lower() == "native":
+        MODEL_DISPLAY_W = SCREEN_W
+        MODEL_DISPLAY_H = SCREEN_H
+        DYNAMIC_X_SCALE = 1.0
+        DYNAMIC_Y_SCALE = 1.0
+    elif VIRTUAL_DISPLAY_ENABLED:
         try:
             vd_w = int(VIRTUAL_DISPLAY_WIDTH_PX)
         except Exception:
@@ -108,57 +109,87 @@ else:
         DYNAMIC_X_SCALE = 1.0
         DYNAMIC_Y_SCALE = 1.0
 
-try:
-    if (SCREENSHOT_MODE or "downscale").lower() == "downscale" and VIRTUAL_DISPLAY_ENABLED:
-        screen_aspect = float(SCREEN_W) / float(SCREEN_H)
-        model_aspect = float(MODEL_DISPLAY_W) / float(MODEL_DISPLAY_H)
-        if screen_aspect > model_aspect:
-            MODEL_CONTENT_W = int(MODEL_DISPLAY_W)
-            MODEL_CONTENT_H = max(1, int(round(MODEL_DISPLAY_W / screen_aspect)))
-            MODEL_LB_OFFSET_X = 0
-            MODEL_LB_OFFSET_Y = int((int(MODEL_DISPLAY_H) - MODEL_CONTENT_H) / 2)
+    try:
+        if (SCREENSHOT_MODE or "downscale").lower() == "downscale" and VIRTUAL_DISPLAY_ENABLED:
+            screen_aspect = float(SCREEN_W) / float(SCREEN_H)
+            model_aspect = float(MODEL_DISPLAY_W) / float(MODEL_DISPLAY_H)
+            if screen_aspect > model_aspect:
+                MODEL_CONTENT_W = int(MODEL_DISPLAY_W)
+                MODEL_CONTENT_H = max(1, int(round(MODEL_DISPLAY_W / screen_aspect)))
+                MODEL_LB_OFFSET_X = 0
+                MODEL_LB_OFFSET_Y = int((int(MODEL_DISPLAY_H) - MODEL_CONTENT_H) / 2)
+            else:
+                MODEL_CONTENT_H = int(MODEL_DISPLAY_H)
+                MODEL_CONTENT_W = max(1, int(round(MODEL_DISPLAY_H * screen_aspect)))
+                MODEL_LB_OFFSET_Y = 0
+                MODEL_LB_OFFSET_X = int((int(MODEL_DISPLAY_W) - MODEL_CONTENT_W) / 2)
         else:
+            MODEL_CONTENT_W = int(MODEL_DISPLAY_W)
             MODEL_CONTENT_H = int(MODEL_DISPLAY_H)
-            MODEL_CONTENT_W = max(1, int(round(MODEL_DISPLAY_H * screen_aspect)))
+            MODEL_LB_OFFSET_X = 0
             MODEL_LB_OFFSET_Y = 0
-            MODEL_LB_OFFSET_X = int((int(MODEL_DISPLAY_W) - MODEL_CONTENT_W) / 2)
-    else:
+    except Exception:
         MODEL_CONTENT_W = int(MODEL_DISPLAY_W)
         MODEL_CONTENT_H = int(MODEL_DISPLAY_H)
         MODEL_LB_OFFSET_X = 0
         MODEL_LB_OFFSET_Y = 0
-except Exception:
-    MODEL_CONTENT_W = int(MODEL_DISPLAY_W)
-    MODEL_CONTENT_H = int(MODEL_DISPLAY_H)
-    MODEL_LB_OFFSET_X = 0
-    MODEL_LB_OFFSET_Y = 0
 
-try:
-    CONTENT_X_SCALE = float(SCREEN_W) / float(MODEL_CONTENT_W)
-    CONTENT_Y_SCALE = float(SCREEN_H) / float(MODEL_CONTENT_H)
-except Exception:
-    CONTENT_X_SCALE = float(SCREEN_W) / float(max(1, int(MODEL_DISPLAY_W)))
-    CONTENT_Y_SCALE = float(SCREEN_H) / float(max(1, int(MODEL_DISPLAY_H)))
+    try:
+        CONTENT_X_SCALE = float(SCREEN_W) / float(MODEL_CONTENT_W)
+        CONTENT_Y_SCALE = float(SCREEN_H) / float(MODEL_CONTENT_H)
+    except Exception:
+        CONTENT_X_SCALE = float(SCREEN_W) / float(max(1, int(MODEL_DISPLAY_W)))
+        CONTENT_Y_SCALE = float(SCREEN_H) / float(max(1, int(MODEL_DISPLAY_H)))
+
+    _GEOMETRY_READY = True
 
 
-def _resolve_tween(params: Dict[str, Any]):
-    tween_name = (params.get("tween") or params.get("easing") or "easeInOutQuad").lower()
-    mapping = {
-        "linear": getattr(pyautogui, "linear", None),
-        "easeinoutquad": getattr(pyautogui, "easeInOutQuad", None),
-        "easeinquad": getattr(pyautogui, "easeInQuad", None),
-        "easeoutquad": getattr(pyautogui, "easeOutQuad", None),
-    }
-    tween_fn = mapping.get(tween_name)
-    return tween_fn or getattr(pyautogui, "easeInOutQuad", None)
+def _mouse_position() -> Tuple[int, int]:
+    return _drivers().mouse.position()
 
 
-def _compute_duration_to(target_x: int, target_y: int, params: Dict[str, Any], *, default: float, speed_pps: float) -> float:
+def _move_to(x: int, y: int, duration_seconds: float = 0.0) -> None:
+    _drivers().mouse.move_to(int(x), int(y), duration_ms=_duration_ms(duration_seconds))
+
+
+def _press_combo(keys: List[str] | Tuple[str, ...]) -> None:
+    clean = tuple(k for k in keys if isinstance(k, str) and k.strip())
+    if clean:
+        _drivers().keyboard.press_combo(clean)
+
+
+def _press_single_key(key: str) -> None:
+    if key in ("enter", "return"):
+        _drivers().keyboard.press_enter()
+        return
+    _press_combo((key,))
+
+
+def _key_down(key: str) -> None:
+    _drivers().keyboard.key_down(key)
+
+
+def _key_up(key: str) -> None:
+    _drivers().keyboard.key_up(key)
+
+
+def _type_text(text: str) -> None:
+    _drivers().keyboard.type_text(text, wpm=600)
+
+
+def _compute_duration_to(
+    target_x: int,
+    target_y: int,
+    params: Dict[str, Any],
+    *,
+    default: float,
+    speed_pps: float,
+) -> float:
     try:
         if "duration" in params or "move_duration" in params:
             val = float(params.get("duration", params.get("move_duration")))
             return max(MIN_MOVE_DURATION, min(MAX_MOVE_DURATION, val))
-        cx, cy = pyautogui.position()
+        cx, cy = _mouse_position()
         dist = ((target_x - cx) ** 2 + (target_y - cy) ** 2) ** 0.5
         dur = dist / float(speed_pps)
         return max(MIN_MOVE_DURATION, min(MAX_MOVE_DURATION, dur))
@@ -167,7 +198,6 @@ def _compute_duration_to(target_x: int, target_y: int, params: Dict[str, Any], *
 
 
 def computer_tool_handler(args: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Adapter from canonical ToolCall args to internal computer action handler."""
     action = args.get("action") or args.get("type")
     if not action:
         return [{"type": "text", "text": "error: missing 'action'"}]
@@ -180,28 +210,23 @@ def computer_tool_handler(args: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def _capture_driver_image():
     try:
-        drivers = get_drivers()
-        return drivers.screen.screenshot()
+        return _drivers().screen.screenshot()
     except Exception:
         return None
 
 
 def _find_project_root(start_dir: str) -> str:
-    # В замороженном бандле (PyInstaller) __file__ указывает на _MEIPASS (readonly temp).
-    # Сохраняем скриншоты в user-writable путь.
     if getattr(sys, "frozen", False):
         if sys.platform == "win32":
             base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
             return os.path.join(base, "OS AI")
-        elif sys.platform == "darwin":
+        if sys.platform == "darwin":
             return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "OS AI")
-        else:
-            return os.path.join(os.path.expanduser("~"), ".local", "share", "os-ai")
+        return os.path.join(os.path.expanduser("~"), ".local", "share", "os-ai")
 
     cur = os.path.abspath(start_dir)
     sentinel_files = {"pyproject.toml", "requirements.txt", "Makefile"}
-    up_limit = 8
-    for _ in range(up_limit):
+    for _ in range(8):
         try:
             entries = set(os.listdir(cur))
         except Exception:
@@ -216,27 +241,33 @@ def _find_project_root(start_dir: str) -> str:
 
 
 def b64_image_from_screenshot() -> Dict[str, Any]:
-    img = _capture_driver_image() or pyautogui.screenshot(region=(0, 0, SCREEN_W, SCREEN_H))
+    _ensure_geometry(refresh=True)
+    img = _capture_driver_image()
+    if img is None:
+        return {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": ""},
+        }
 
     try:
         from PIL import Image  # type: ignore
+
         target_w, target_h = int(MODEL_DISPLAY_W), int(MODEL_DISPLAY_H)
         if (SCREENSHOT_MODE or "downscale").lower() == "downscale":
             if img.width != SCREEN_W or img.height != SCREEN_H:
                 img = img.resize((SCREEN_W, SCREEN_H), resample=getattr(Image, "LANCZOS", None) or Image.BILINEAR)
             content = img.resize((MODEL_CONTENT_W, MODEL_CONTENT_H), resample=getattr(Image, "LANCZOS", None) or Image.BILINEAR)
-            from PIL import Image as PILImage  # type: ignore
-            canvas = PILImage.new("RGB", (target_w, target_h), (0, 0, 0))
+            canvas = Image.new("RGB", (target_w, target_h), (0, 0, 0))
             canvas.paste(content, (MODEL_LB_OFFSET_X, MODEL_LB_OFFSET_Y))
             img = canvas
-        else:
-            if img.width != target_w or img.height != target_h:
-                resample = getattr(Image, "LANCZOS", getattr(Image, "BILINEAR", None))
-                img = img.resize((target_w, target_h), resample=resample)
+        elif img.width != target_w or img.height != target_h:
+            resample = getattr(Image, "LANCZOS", getattr(Image, "BILINEAR", None))
+            img = img.resize((target_w, target_h), resample=resample)
     except Exception:
         pass
 
     from io import BytesIO
+
     buf = BytesIO()
     fmt = (SCREENSHOT_FORMAT or "PNG").upper()
     media_type = "image/png" if fmt == "PNG" else "image/jpeg"
@@ -254,12 +285,9 @@ def b64_image_from_screenshot() -> Dict[str, Any]:
                 img_to_save.save(file_path, format="JPEG", quality=int(SCREENSHOT_JPEG_QUALITY or 85))
             else:
                 img.save(file_path, format="PNG")
-            logging.getLogger(LOGGER_NAME).info(f"Saved screenshot: {file_path}")
-            try:
-                global LAST_SCREENSHOT_PATH
-                LAST_SCREENSHOT_PATH = file_path
-            except Exception:
-                pass
+            logging.getLogger(LOGGER_NAME).info("Saved screenshot: %s", file_path)
+            global LAST_SCREENSHOT_PATH
+            LAST_SCREENSHOT_PATH = file_path
         except Exception:
             pass
 
@@ -285,8 +313,8 @@ def b64_image_from_screenshot() -> Dict[str, Any]:
     }
 
 
-
 def clamp_xy(x: int, y: int) -> Tuple[int, int]:
+    _ensure_geometry()
     return max(0, min(x, SCREEN_W - 1)), max(0, min(y, SCREEN_H - 1))
 
 
@@ -300,6 +328,7 @@ def _apply_calibration(x: int, y: int) -> Tuple[int, int]:
 
 
 def _to_screen_xy(x: int, y: int, *, coordinate_space: str | None = None) -> Tuple[int, int]:
+    _ensure_geometry()
     try:
         space = (coordinate_space or "screen").lower()
     except Exception:
@@ -332,37 +361,41 @@ def _to_screen_xy(x: int, y: int, *, coordinate_space: str | None = None) -> Tup
 
 
 def parse_key_combo(combo: str) -> List[str]:
-    _is_mac = sys.platform == "darwin"
-    _meta_key = "command" if _is_mac else "win"
-    _alt_key = "option" if _is_mac else "alt"
+    is_mac = sys.platform == "darwin"
+    meta_key = "command" if is_mac else "win"
+    alt_key = "option" if is_mac else "alt"
     mapping = {
-        "cmd": _meta_key, "command": _meta_key,
-        "super": _meta_key, "meta": _meta_key,
-        "ctrl": "ctrl", "control": "ctrl",
-        "alt": _alt_key, "option": _alt_key,
+        "cmd": meta_key,
+        "command": meta_key,
+        "super": meta_key,
+        "meta": meta_key,
+        "ctrl": "ctrl",
+        "control": "ctrl",
+        "alt": alt_key,
+        "option": alt_key,
         "shift": "shift",
-        "enter": "enter", "return": "enter",
-        "esc": "esc", "escape": "esc",
+        "enter": "enter",
+        "return": "enter",
+        "esc": "esc",
+        "escape": "esc",
         "tab": "tab",
         "space": "space",
-        "backspace": "backspace", "delete": "delete",
-        "up": "up", "down": "down", "left": "left", "right": "right",
+        "backspace": "backspace",
+        "delete": "delete",
+        "up": "up",
+        "down": "down",
+        "left": "left",
+        "right": "right",
     }
     keys: List[str] = []
     for k in combo.lower().split("+"):
         k = k.strip()
-        if not k:
-            continue
-        keys.append(mapping.get(k, k))
+        if k:
+            keys.append(mapping.get(k, k))
     return keys
 
 
 def _keys_from_fallback_text(text: str) -> List[str]:
-    """Best-effort parse when 'key' is missing but 'text' looks like key names.
-
-    Splits by whitespace, maps aliases (Return->enter, Escape->esc, etc.).
-    Returns normalized key list or empty if text does not look like keys.
-    """
     if not isinstance(text, str) or not text.strip():
         return []
     tokens = [t for t in text.replace("+", " ").split() if t]
@@ -371,60 +404,73 @@ def _keys_from_fallback_text(text: str) -> List[str]:
     mapped: List[str] = []
     for t in tokens:
         mapped.extend(parse_key_combo(t))
-    # Heuristic: consider it valid if all tokens mapped to known keys (no unchanged mixed-case words)
-    if not mapped:
-        return []
     return mapped
 
 
-def _with_modifiers(mods: List[str], action_fn):
+def _with_modifiers(mods: List[str], action_fn: Callable[[], Any]) -> Any:
     mods = [m for m in mods if m]
     try:
         for m in mods:
-            pyautogui.keyDown(m)
+            _key_down(m)
         return action_fn()
     finally:
         for m in reversed(mods):
             try:
-                pyautogui.keyUp(m)
+                _key_up(m)
             except Exception:
                 pass
 
 
+def _modifiers_from_params(params: Dict[str, Any]) -> List[str]:
+    raw_mods = params.get("modifiers") or []
+    if isinstance(raw_mods, str):
+        raw_mods = [s.strip() for s in raw_mods.split("+") if s.strip()]
+    return parse_key_combo("+".join(raw_mods)) if raw_mods else []
+
+
+def _move_to_coord(coord: Any, params: Dict[str, Any], *, default: float, speed_pps: float) -> Tuple[int, int]:
+    coord_space = params.get("coordinate_space")
+    x, y = _to_screen_xy(int(coord[0]), int(coord[1]), coordinate_space=coord_space)
+    dur = _compute_duration_to(x, y, params, default=default, speed_pps=speed_pps)
+    _move_to(x, y, dur)
+    return x, y
+
+
 def handle_computer_action(action: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
     logger = logging.getLogger(LOGGER_NAME)
+    _ensure_geometry()
 
     if action == "screenshot":
         return [b64_image_from_screenshot()]
 
     if action == "mouse_move":
         x, y = params.get("coordinate", [0, 0])
-        coord_space = params.get("coordinate_space")
-        x, y = _to_screen_xy(int(x), int(y), coordinate_space=coord_space)
-        tween_fn = _resolve_tween(params)
+        x, y = _to_screen_xy(int(x), int(y), coordinate_space=params.get("coordinate_space"))
         dur = _compute_duration_to(x, y, params, default=0.35, speed_pps=DEFAULT_MOVE_SPEED_PPS)
         try:
             try:
-                get_drivers().overlay.highlight(x, y, duration=PREMOVE_HIGHLIGHT_DEFAULT_DURATION)
+                _drivers().overlay.highlight(x, y, duration=PREMOVE_HIGHLIGHT_DEFAULT_DURATION)
             except Exception:
                 pass
-            pyautogui.moveTo(x, y, duration=dur, tween=tween_fn)
+            _move_to(x, y, dur)
             try:
-                get_drivers().overlay.process_events()
+                _drivers().overlay.process_events()
             except Exception:
                 pass
             if POST_MOVE_VERIFY:
                 try:
-                    ax, ay = pyautogui.position()
+                    ax, ay = _mouse_position()
                     dx, dy = abs(ax - x), abs(ay - y)
                     if dx > POST_MOVE_TOLERANCE_PX or dy > POST_MOVE_TOLERANCE_PX:
-                        pyautogui.moveTo(x, y, duration=max(0.0, POST_MOVE_CORRECTION_DURATION), tween=getattr(pyautogui, "linear", None))
+                        _move_to(x, y, max(0.0, POST_MOVE_CORRECTION_DURATION))
                 except Exception:
                     pass
-        except pyautogui.FailSafeException:
-            logger.warning("PyAutoGUI fail-safe triggered during move; skipping move")
-            return [{"type": "text", "text": "move skipped: fail-safe"}]
-        if (os.environ.get("SCREENSHOT_AFTER_ACTIONS") == "1"):
+        except Exception as exc:
+            if _is_input_fail_safe(exc):
+                logger.warning("Input fail-safe triggered during move; skipping move")
+                return [{"type": "text", "text": "move skipped: fail-safe"}]
+            raise
+        if os.environ.get("SCREENSHOT_AFTER_ACTIONS") == "1":
             return [b64_image_from_screenshot()]
         return [{"type": "text", "text": "ok"}]
 
@@ -432,74 +478,71 @@ def handle_computer_action(action: str, params: Dict[str, Any]) -> List[Dict[str
         coord = params.get("coordinate")
         clicks = 1
         button = "left"
-        if action == "double_click": clicks = 2
-        if action == "triple_click": clicks = 3
-        if action == "right_click": button = "right"
-        if action == "middle_click": button = "middle"
-        raw_mods = params.get("modifiers") or []
-        if isinstance(raw_mods, str):
-            raw_mods = [s.strip() for s in raw_mods.split("+") if s.strip()]
-        modifiers = parse_key_combo("+".join(raw_mods)) if raw_mods else []
-        if coord:
-            coord_space = params.get("coordinate_space")
-            x, y = _to_screen_xy(int(coord[0]), int(coord[1]), coordinate_space=coord_space)
-            tween_fn = _resolve_tween(params)
-            dur = _compute_duration_to(x, y, params, default=0.30, speed_pps=DEFAULT_MOVE_SPEED_PPS)
-            pyautogui.moveTo(x, y, duration=dur, tween=tween_fn)
-            try:
-                def _do():
-                    pyautogui.click(x=x, y=y, clicks=clicks, button=button, interval=0.05)
-                _with_modifiers(modifiers, _do)
-            except pyautogui.FailSafeException:
-                logger.warning("PyAutoGUI fail-safe triggered during click; skipping click")
-                return [{"type": "text", "text": "click skipped: fail-safe"}]
-        else:
-            try:
-                def _do():
-                    pyautogui.click(clicks=clicks, button=button, interval=0.05)
-                _with_modifiers(modifiers, _do)
-            except pyautogui.FailSafeException:
-                logger.warning("PyAutoGUI fail-safe triggered during click at current position; skipping click")
-                return [{"type": "text", "text": "click skipped: fail-safe"}]
+        if action == "double_click":
+            clicks = 2
+        if action == "triple_click":
+            clicks = 3
+        if action == "right_click":
+            button = "right"
+        if action == "middle_click":
+            button = "middle"
+        modifiers = _modifiers_from_params(params)
         try:
-            get_drivers().sound.play_click()
+            if coord:
+                _move_to_coord(coord, params, default=0.30, speed_pps=DEFAULT_MOVE_SPEED_PPS)
+
+            def _do() -> None:
+                _drivers().mouse.click(clicks=clicks, button=button)
+
+            _with_modifiers(modifiers, _do)
+        except Exception as exc:
+            if _is_input_fail_safe(exc):
+                logger.warning("Input fail-safe triggered during click; skipping click")
+                return [{"type": "text", "text": "click skipped: fail-safe"}]
+            raise
+        try:
+            _drivers().sound.play_click()
         except Exception:
             pass
-        blocks: List[Dict[str, Any]] = []
-        blocks.append({"type": "text", "text": f"done: {action}"})
-        return blocks
+        return [{"type": "text", "text": f"done: {action}"}]
 
     if action in ("left_mouse_down", "left_mouse_up"):
         coord = params.get("coordinate")
-        raw_mods = params.get("modifiers") or []
-        if isinstance(raw_mods, str):
-            raw_mods = [s.strip() for s in raw_mods.split("+") if s.strip()]
-        modifiers = parse_key_combo("+".join(raw_mods)) if raw_mods else []
-        if coord:
-            coord_space = params.get("coordinate_space")
-            x, y = _to_screen_xy(int(coord[0]), int(coord[1]), coordinate_space=coord_space)
-            tween_fn = _resolve_tween(params)
-            dur = _compute_duration_to(x, y, params, default=0.30, speed_pps=DEFAULT_MOVE_SPEED_PPS)
-            try:
-                pyautogui.moveTo(x, y, duration=dur, tween=tween_fn)
-            except pyautogui.FailSafeException:
-                logger.warning("PyAutoGUI fail-safe triggered during move before mouse down/up; skipping move")
+        modifiers = _modifiers_from_params(params)
         try:
-            def _do():
+            if coord:
+                _move_to_coord(coord, params, default=0.30, speed_pps=DEFAULT_MOVE_SPEED_PPS)
+
+            def _do() -> None:
                 if action == "left_mouse_down":
-                    pyautogui.mouseDown(button="left")
+                    _drivers().mouse.down(button="left")
                 else:
-                    pyautogui.mouseUp(button="left")
+                    _drivers().mouse.up(button="left")
+
             _with_modifiers(modifiers, _do)
-        except pyautogui.FailSafeException:
-            logger.warning("PyAutoGUI fail-safe triggered during mouse down/up; skipping")
-            return [{"type": "text", "text": f"{action} skipped: fail-safe"}]
+        except Exception as exc:
+            if _is_input_fail_safe(exc):
+                logger.warning("Input fail-safe triggered during mouse down/up; skipping")
+                return [{"type": "text", "text": f"{action} skipped: fail-safe"}]
+            raise
         return [{"type": "text", "text": f"done: {action}"}]
 
     if action == "left_click_drag":
-        start = params.get("start") or params.get("from") or params.get("source") or params.get("start_coordinate") or params.get("from_coordinate")
-        end = params.get("end") or params.get("to") or params.get("target") or params.get("end_coordinate") or params.get("to_coordinate")
-        full_path = params.get("path")  # list of [x, y] points for multi-point drag
+        start = (
+            params.get("start")
+            or params.get("from")
+            or params.get("source")
+            or params.get("start_coordinate")
+            or params.get("from_coordinate")
+        )
+        end = (
+            params.get("end")
+            or params.get("to")
+            or params.get("target")
+            or params.get("end_coordinate")
+            or params.get("to_coordinate")
+        )
+        full_path = params.get("path")
         if not (start and end):
             return [{"type": "text", "text": "drag skipped: missing start/end"}]
         coord_space = params.get("coordinate_space")
@@ -509,49 +552,49 @@ def handle_computer_action(action: str, params: Dict[str, Any]) -> List[Dict[str
         hold_after_ms = int(params.get("hold_after_ms", 50))
         steps = max(1, int(params.get("steps", 1)))
         step_delay = max(0.0, float(params.get("step_delay", 0.0)))
-        raw_mods = params.get("modifiers") or []
-        if isinstance(raw_mods, str):
-            raw_mods = [s.strip() for s in raw_mods.split("+") if s.strip()]
-        modifiers = parse_key_combo("+".join(raw_mods)) if raw_mods else []
-        tween_fn = _resolve_tween(params)
+        modifiers = _modifiers_from_params(params)
         move_dur = _compute_duration_to(x1, y1, params, default=0.30, speed_pps=DEFAULT_MOVE_SPEED_PPS)
-        try:
-            pyautogui.moveTo(x1, y1, duration=move_dur, tween=tween_fn)
-            def _do_drag():
-                time.sleep(max(0.0, hold_before_ms / 1000.0))
-                pyautogui.mouseDown(button="left")
+
+        def _do_drag() -> None:
+            time.sleep(max(0.0, hold_before_ms / 1000.0))
+            _drivers().mouse.down(button="left")
+            try:
                 if full_path and len(full_path) > 2:
-                    # Multi-point path: follow all intermediate points for smooth curves
                     for pt in full_path[1:]:
                         px, py = _to_screen_xy(int(pt[0]), int(pt[1]), coordinate_space=coord_space)
-                        # Use short duration for path segments — no MIN_MOVE_DURATION clamp
-                        dist = ((px - pyautogui.position()[0]) ** 2 + (py - pyautogui.position()[1]) ** 2) ** 0.5
+                        cx, cy = _mouse_position()
+                        dist = ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5
                         seg_dur = max(0.01, dist / float(DEFAULT_DRAG_SPEED_PPS))
-                        pyautogui.moveTo(px, py, duration=seg_dur, tween=tween_fn)
+                        _move_to(px, py, seg_dur)
                         if step_delay > 0:
                             time.sleep(step_delay)
                 elif steps <= 1:
                     drag_dur = _compute_duration_to(x2, y2, params, default=0.40, speed_pps=DEFAULT_DRAG_SPEED_PPS)
-                    pyautogui.moveTo(x2, y2, duration=drag_dur, tween=tween_fn)
+                    _move_to(x2, y2, drag_dur)
                 else:
                     for i in range(1, steps + 1):
                         nx = int(round(x1 + (x2 - x1) * (i / float(steps))))
                         ny = int(round(y1 + (y2 - y1) * (i / float(steps))))
                         step_dur = _compute_duration_to(nx, ny, params, default=0.05, speed_pps=DEFAULT_DRAG_SPEED_PPS)
-                        pyautogui.moveTo(nx, ny, duration=step_dur, tween=tween_fn)
+                        _move_to(nx, ny, step_dur)
                         if step_delay > 0:
                             time.sleep(step_delay)
                 time.sleep(max(0.0, hold_after_ms / 1000.0))
-                pyautogui.mouseUp(button="left")
+            finally:
+                _drivers().mouse.up(button="left")
+
+        try:
+            _move_to(x1, y1, move_dur)
             _with_modifiers(modifiers, _do_drag)
-        except pyautogui.FailSafeException:
-            logger.warning("PyAutoGUI fail-safe triggered during drag; skipping drag")
-            return [{"type": "text", "text": "drag skipped: fail-safe"}]
+        except Exception as exc:
+            if _is_input_fail_safe(exc):
+                logger.warning("Input fail-safe triggered during drag; skipping drag")
+                return [{"type": "text", "text": "drag skipped: fail-safe"}]
+            raise
         return [{"type": "text", "text": f"done: {action}"}]
 
     if action == "type":
         text = params.get("text", "")
-        # Heuristics: prefer clipboard paste for non-ASCII or multiline/code to avoid editor auto-pair insertion
         try:
             has_non_ascii = any(ord(c) > 127 for c in text)
         except Exception:
@@ -567,6 +610,7 @@ def handle_computer_action(action: str, params: Dict[str, Any]) -> List[Dict[str
                     PASTE_COPY_DELAY_SECONDS,
                     PASTE_POST_DELAY_SECONDS,
                 )
+
                 try:
                     prev_clip = pyperclip.paste()
                 except Exception:
@@ -574,9 +618,8 @@ def handle_computer_action(action: str, params: Dict[str, Any]) -> List[Dict[str
                 try:
                     pyperclip.copy(text)
                     time.sleep(PASTE_COPY_DELAY_SECONDS)
-                    # Use platform-appropriate modifier: command on macOS, ctrl on Windows/Linux
                     modifier = "command" if sys.platform == "darwin" else "ctrl"
-                    pyautogui.hotkey(modifier, "v")
+                    _press_combo((modifier, "v"))
                     time.sleep(PASTE_POST_DELAY_SECONDS)
                 finally:
                     if RESTORE_CLIPBOARD_AFTER_PASTE and prev_clip is not None:
@@ -586,9 +629,8 @@ def handle_computer_action(action: str, params: Dict[str, Any]) -> List[Dict[str
                             pass
                 return [{"type": "text", "text": f"pasted {len(text)} chars via clipboard"}]
             except Exception:
-                # Fallback to typing if clipboard unavailable
                 pass
-        pyautogui.write(text, interval=0.02)
+        _type_text(str(text))
         return [{"type": "text", "text": "done: type"}]
 
     if action in ("key", "hold_key"):
@@ -615,15 +657,13 @@ def handle_computer_action(action: str, params: Dict[str, Any]) -> List[Dict[str
         if not norm_keys:
             fallback_text = params.get("text") or params.get("character")
             if isinstance(fallback_text, str) and fallback_text:
-                # Try to parse textual key names like "Return" into real key presses
                 maybe_keys = _keys_from_fallback_text(fallback_text)
                 if maybe_keys:
                     norm_keys = maybe_keys
                     derived_from_text = True
                 else:
-                    pyautogui.write(fallback_text, interval=0.02)
+                    _type_text(fallback_text)
                     return [{"type": "text", "text": f"typed: {len(fallback_text)} chars"}]
-            # Only return error if norm_keys is still empty after fallback parsing
             if not norm_keys:
                 combo_raw = combo if isinstance(combo, str) else str(combo)
                 return [{"type": "text", "text": f"error: missing key combo (raw='{combo_raw}')"}]
@@ -634,65 +674,43 @@ def handle_computer_action(action: str, params: Dict[str, Any]) -> List[Dict[str
                 return [{"type": "text", "text": "error: hold_key needs modifiers+key"}]
             try:
                 for k in norm_keys[:-1]:
-                    pyautogui.keyDown(k)
-                pyautogui.press(norm_keys[-1])
+                    _key_down(k)
+                _press_single_key(norm_keys[-1])
             finally:
                 for k in reversed(norm_keys[:-1]):
-                    pyautogui.keyUp(k)
+                    _key_up(k)
         else:
-            if len(norm_keys) == 1 and norm_keys[0] in ("enter", "return"):
-                press_enter_mac()
+            if len(norm_keys) == 1:
+                _press_single_key(norm_keys[0])
             else:
-                if len(norm_keys) == 1:
-                    pyautogui.press(norm_keys[0])
+                simple_non_mods = {"enter", "tab", "esc", "space", "backspace", "delete"}
+                if derived_from_text and len(set(norm_keys)) == 1 and norm_keys[0] in simple_non_mods:
+                    key = norm_keys[0]
+                    count = len(norm_keys)
+                    for _ in range(count):
+                        _press_single_key(key)
+                    pressed_label = f"{key} x{count}"
                 else:
-                    # If keys were derived from textual tokens (e.g., "Return Return") and are identical
-                    # non-modifier keys, press them sequentially instead of treating as a combo
-                    simple_non_mods = {"enter", "tab", "esc", "space", "backspace", "delete"}
-                    if derived_from_text and len(set(norm_keys)) == 1 and norm_keys[0] in simple_non_mods:
-                        key = norm_keys[0]
-                        count = len(norm_keys)
-                        for _ in range(count):
-                            if key in ("enter",):
-                                press_enter_mac()
-                            else:
-                                pyautogui.press(key)
-                        pressed_label = f"{key} x{count}"
-                    else:
-                        pyautogui.hotkey(*norm_keys)
+                    _press_combo(norm_keys)
         return [{"type": "text", "text": f"pressed: {pressed_label}"}]
 
     if action == "scroll":
         coord = params.get("coordinate")
         direction = (params.get("scroll_direction") or "down").lower()
         amount = int(params.get("scroll_amount", 1))
-        if coord:
-            coord_space = params.get("coordinate_space")
-            x, y = _to_screen_xy(int(coord[0]), int(coord[1]), coordinate_space=coord_space)
-            tween_fn = _resolve_tween(params)
-            dur = _compute_duration_to(x, y, params, default=0.25, speed_pps=DEFAULT_MOVE_SPEED_PPS)
-            try:
-                pyautogui.moveTo(x, y, duration=dur, tween=tween_fn)
-            except pyautogui.FailSafeException:
+        try:
+            if coord:
+                _move_to_coord(coord, params, default=0.25, speed_pps=DEFAULT_MOVE_SPEED_PPS)
+            if direction in ("down", "up"):
+                clicks = -abs(amount) if direction == "down" else abs(amount)
+                _drivers().mouse.scroll(dy=clicks)
+            elif direction in ("left", "right"):
+                clicks = -abs(amount) if direction == "left" else abs(amount)
+                _drivers().mouse.scroll(dx=clicks)
+        except Exception as exc:
+            if _is_input_fail_safe(exc):
                 return [{"type": "text", "text": "scroll skipped: fail-safe"}]
-        if direction in ("down", "up"):
-            clicks = -abs(amount) if direction == "down" else abs(amount)
-            try:
-                pyautogui.scroll(clicks)
-            except pyautogui.FailSafeException:
-                return [{"type": "text", "text": "scroll skipped: fail-safe"}]
-        elif direction in ("left", "right"):
-            clicks = -abs(amount) if direction == "left" else abs(amount)
-            try:
-                pyautogui.hscroll(clicks)
-            except AttributeError:
-                try:
-                    pyautogui.keyDown("shift")
-                    pyautogui.scroll(clicks)
-                finally:
-                    pyautogui.keyUp("shift")
-            except pyautogui.FailSafeException:
-                return [{"type": "text", "text": "hscroll skipped: fail-safe"}]
+            raise
         return [{"type": "text", "text": "ok"}]
 
     if action == "wait":
@@ -704,13 +722,6 @@ def handle_computer_action(action: str, params: Dict[str, Any]) -> List[Dict[str
 
 
 def computer_tool_handler_batch(args: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Handle computer actions — supports both single (Anthropic) and batch (OpenAI).
-
-    If args contains _openai_batch=True (merged from ToolCall.metadata by registry):
-      Execute all _openai_actions sequentially, return single screenshot.
-    Otherwise:
-      Delegate to single-action computer_tool_handler.
-    """
     if not args.get("_openai_batch"):
         return computer_tool_handler(args)
 
@@ -721,7 +732,6 @@ def computer_tool_handler_batch(args: Dict[str, Any]) -> List[Dict[str, Any]]:
     cancel_token = args.get("_cancel_token")
     logger = logging.getLogger(LOGGER_NAME)
     for i, action_args in enumerate(actions):
-        # Check cancel before each action in batch
         if cancel_token is not None and cancel_token.is_cancelled:
             logger.info("Batch cancelled at action %d/%d", i + 1, len(actions))
             break
@@ -736,8 +746,7 @@ def computer_tool_handler_batch(args: Dict[str, Any]) -> List[Dict[str, Any]]:
             for block in result:
                 if isinstance(block, dict) and block.get("text", "").startswith("error:"):
                     logger.warning("Batch action %d failed: %s", i + 1, block.get("text"))
-        except Exception as e:
-            logger.warning("Batch action %d exception: %s", i + 1, e)
+        except Exception as exc:
+            logger.warning("Batch action %d exception: %s", i + 1, exc)
 
     return [b64_image_from_screenshot()]
-

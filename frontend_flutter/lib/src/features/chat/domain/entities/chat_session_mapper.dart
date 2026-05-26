@@ -18,7 +18,8 @@ extension ChatSessionMapper on ChatSession {
     return ChatSession(
       id: (map['id'] as String?) ?? '',
       title: (map['title'] as String?) ?? 'Chat',
-      createdAt: DateTime.tryParse((map['createdAt'] as String?) ?? '') ?? DateTime.now(),
+      createdAt: DateTime.tryParse((map['createdAt'] as String?) ?? '') ??
+          DateTime.now(),
       totalUsd: (map['totalUsd'] as num?)?.toDouble() ?? 0.0,
       totalInputTokens: (map['totalInputTokens'] as num?)?.toInt() ?? 0,
       totalOutputTokens: (map['totalOutputTokens'] as num?)?.toInt() ?? 0,
@@ -27,6 +28,3 @@ extension ChatSessionMapper on ChatSession {
     );
   }
 }
-
-
-

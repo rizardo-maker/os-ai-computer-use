@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import logging
+import json
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -183,6 +184,7 @@ class OpenAIClient(LLMClient):
                         "_openai_batch": True,
                         "_openai_actions": internal_actions,
                         "_openai_pending_safety_checks": safety_list,
+                        "provider_safety_checks": safety_list,
                     },
                 ))
 
@@ -393,8 +395,16 @@ class OpenAIClient(LLMClient):
             },
         }
 
-        pending_checks = result.metadata.get("_openai_pending_safety_checks", [])
-        if pending_checks and OPENAI_AUTO_ACKNOWLEDGE_SAFETY_CHECKS:
+        pending_checks = (
+            result.metadata.get("_openai_pending_safety_checks")
+            or result.metadata.get("provider_safety_checks")
+            or []
+        )
+        safety_checks_approved = bool(
+            result.metadata.get("_openai_safety_checks_approved")
+            or result.metadata.get("provider_safety_checks_approved")
+        )
+        if pending_checks and (OPENAI_AUTO_ACKNOWLEDGE_SAFETY_CHECKS or safety_checks_approved):
             output_item["acknowledged_safety_checks"] = [
                 {"id": sc.get("id", ""), "code": sc.get("code", ""), "message": sc.get("message", "")}
                 for sc in pending_checks

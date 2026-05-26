@@ -13,7 +13,9 @@ class UsageScreen extends StatelessWidget {
     final isMacOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Usage', style: context.theme.style((t) => t.body, (c) => c.assistantBubbleFg)),
+        title: Text('Usage',
+            style:
+                context.theme.style((t) => t.body, (c) => c.assistantBubbleFg)),
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         toolbarHeight: isMacOS ? 38 : kToolbarHeight,
@@ -34,9 +36,13 @@ class UsageScreen extends StatelessWidget {
                 spacing: 12,
                 runSpacing: 12,
                 children: [
-                  _StatCard(title: 'Total USD', value: '\$' + totalUsd.toStringAsFixed(6)),
-                  _StatCard(title: 'Total input tokens', value: totalIn.toString()),
-                  _StatCard(title: 'Total output tokens', value: totalOut.toString()),
+                  _StatCard(
+                      title: 'Total USD',
+                      value: '\$${totalUsd.toStringAsFixed(6)}'),
+                  _StatCard(
+                      title: 'Total input tokens', value: totalIn.toString()),
+                  _StatCard(
+                      title: 'Total output tokens', value: totalOut.toString()),
                 ],
               ),
               const SizedBox(height: 16),
@@ -56,11 +62,17 @@ class UsageScreen extends StatelessWidget {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text('By chats', style: context.theme.style((t) => t.caption, (c) => c.assistantBubbleFg)),
+                              child: Text('By chats',
+                                  style: context.theme.style((t) => t.caption,
+                                      (c) => c.assistantBubbleFg)),
                             ),
-                            Text('USD', style: context.theme.style((t) => t.caption, (c) => c.assistantBubbleFg)),
+                            Text('USD',
+                                style: context.theme.style((t) => t.caption,
+                                    (c) => c.assistantBubbleFg)),
                             const SizedBox(width: 16),
-                            Text('Tokens', style: context.theme.style((t) => t.caption, (c) => c.assistantBubbleFg)),
+                            Text('Tokens',
+                                style: context.theme.style((t) => t.caption,
+                                    (c) => c.assistantBubbleFg)),
                             const SizedBox(width: 12),
                           ],
                         ),
@@ -72,29 +84,51 @@ class UsageScreen extends StatelessWidget {
                           separatorBuilder: (_, __) => const Divider(height: 1),
                           itemBuilder: (_, i) {
                             final s = sessions[i];
-                            final tok = s.totalInputTokens + s.totalOutputTokens;
+                            final tok =
+                                s.totalInputTokens + s.totalOutputTokens;
                             return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
                               child: Row(
                                 children: [
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text(s.title, style: context.theme.style((t) => t.body, (c) => c.assistantBubbleFg)),
-                                        if ((s.lastMessageText ?? '').isNotEmpty)
+                                        Text(s.title,
+                                            style: context.theme.style(
+                                                (t) => t.body,
+                                                (c) => c.assistantBubbleFg)),
+                                        if ((s.lastMessageText ?? '')
+                                            .isNotEmpty)
                                           Text(
                                             s.lastMessageText!,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: context.theme.style((t) => t.caption, (c) => c.assistantBubbleFg),
+                                            style: context.theme.style(
+                                                (t) => t.caption,
+                                                (c) => c.assistantBubbleFg),
                                           ),
                                       ],
                                     ),
                                   ),
-                                  SizedBox(width: 100, child: Text('\$' + s.totalUsd.toStringAsFixed(6), textAlign: TextAlign.right, style: context.theme.style((t) => t.bodySmall, (c) => c.assistantBubbleFg))),
+                                  SizedBox(
+                                      width: 100,
+                                      child: Text(
+                                          '\$${s.totalUsd.toStringAsFixed(6)}',
+                                          textAlign: TextAlign.right,
+                                          style: context.theme.style(
+                                              (t) => t.bodySmall,
+                                              (c) => c.assistantBubbleFg))),
                                   const SizedBox(width: 16),
-                                  SizedBox(width: 80, child: Text(tok.toString(), textAlign: TextAlign.right, style: context.theme.style((t) => t.bodySmall, (c) => c.assistantBubbleFg))),
+                                  SizedBox(
+                                      width: 80,
+                                      child: Text(tok.toString(),
+                                          textAlign: TextAlign.right,
+                                          style: context.theme.style(
+                                              (t) => t.bodySmall,
+                                              (c) => c.assistantBubbleFg))),
                                 ],
                               ),
                             );
@@ -130,13 +164,15 @@ class _StatCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: context.theme.style((t) => t.caption, (c) => c.assistantBubbleFg)),
+          Text(title,
+              style: context.theme
+                  .style((t) => t.caption, (c) => c.assistantBubbleFg)),
           const SizedBox(height: 6),
-          Text(value, style: context.theme.style((t) => t.body, (c) => c.assistantBubbleFg)),
+          Text(value,
+              style: context.theme
+                  .style((t) => t.body, (c) => c.assistantBubbleFg)),
         ],
       ),
     );
   }
 }
-
-

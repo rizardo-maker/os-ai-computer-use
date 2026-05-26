@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Alignment;
@@ -74,6 +73,5 @@ class WindowModeService extends ChangeNotifier {
     await windowManager.minimize();
   }
 
-  bool get _isMacOS =>
-      !kIsWeb && Platform.isMacOS;
+  bool get _isMacOS => !kIsWeb && Platform.isMacOS;
 }

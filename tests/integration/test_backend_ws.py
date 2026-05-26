@@ -77,7 +77,7 @@ def test_ws_flow_session_and_run(client):
         assert final["params"]["status"] in ("ok", "fail")
 
 
-def test_ws_mcp_approval_unavailable_returns_tool_error_and_final(monkeypatch):
+def test_ws_mcp_approval_denied_returns_tool_error_and_final(monkeypatch):
     from os_ai_core.adapters.tools.composite_tool_gateway import CompositeToolGateway
     from os_ai_core.domain.tools.policies import ToolTrustLevel
     from os_ai_mcp.client.tool_provider import McpToolProvider
@@ -165,8 +165,22 @@ def test_ws_mcp_approval_unavailable_returns_tool_error_and_final(monkeypatch):
 
         final = None
         tool_error = None
-        for _ in range(50):
+        approval_seen = False
+        for _ in range(80):
             event = _recv_json(ws)
+            if event.get("method") == "event.approval":
+                approval_seen = True
+                params = event["params"]
+                ws.send_text(json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": "approve-deny",
+                    "method": "approval.respond",
+                    "params": {
+                        "jobId": params["jobId"],
+                        "approvalId": params["approvalId"],
+                        "approved": "false",
+                    },
+                }))
             if event.get("method") == "event.action" and event["params"].get("name") == "tool_result":
                 tool_error = event
             if event.get("method") == "event.final":
@@ -175,8 +189,9 @@ def test_ws_mcp_approval_unavailable_returns_tool_error_and_final(monkeypatch):
 
     assert session.calls == []
     assert llm.calls == 2
+    assert approval_seen is True
     assert tool_error is not None
-    assert "approval result: unavailable" in tool_error["params"]["meta"]["text"]
+    assert "approval result: denied" in tool_error["params"]["meta"]["text"]
     assert final is not None
     assert final["params"]["jobId"] == job_id
     assert final["params"]["status"] == "ok"

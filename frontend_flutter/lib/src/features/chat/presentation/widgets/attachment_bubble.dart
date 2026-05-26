@@ -13,7 +13,12 @@ class AttachmentBubble extends StatelessWidget {
   final String fileId;
   final bool isUser;
   final String? previewBase64;
-  const AttachmentBubble({super.key, required this.name, required this.fileId, this.isUser = true, this.previewBase64});
+  const AttachmentBubble(
+      {super.key,
+      required this.name,
+      required this.fileId,
+      this.isUser = true,
+      this.previewBase64});
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +28,9 @@ class AttachmentBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
         decoration: BoxDecoration(
-          color: isUser ? context.themeColors.userBubbleBg : context.themeColors.assistantBubbleBg,
+          color: isUser
+              ? context.themeColors.userBubbleBg
+              : context.themeColors.assistantBubbleBg,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -40,7 +47,11 @@ class AttachmentBubble extends StatelessWidget {
                 ),
               )
             else
-              Icon(Icons.attach_file, color: isUser ? context.themeColors.userBubbleFg : context.themeColors.assistantBubbleFg, size: 18),
+              Icon(Icons.attach_file,
+                  color: isUser
+                      ? context.themeColors.userBubbleFg
+                      : context.themeColors.assistantBubbleFg,
+                  size: 18),
             const SizedBox(width: 8),
             Flexible(
               child: Text(
@@ -48,7 +59,8 @@ class AttachmentBubble extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: isUser
                     ? context.theme.style((t) => t.body, (c) => c.userBubbleFg)
-                    : context.theme.style((t) => t.body, (c) => c.assistantBubbleFg),
+                    : context.theme
+                        .style((t) => t.body, (c) => c.assistantBubbleFg),
               ),
             ),
             const SizedBox(width: 8),
@@ -58,7 +70,7 @@ class AttachmentBubble extends StatelessWidget {
                 if (repo == null) return;
                 final bytes = await repo.downloadFile(fileId);
                 final dir = await getTemporaryDirectory();
-                final path = dir.path + '/' + name;
+                final path = '${dir.path}/$name';
                 final f = await File(path).writeAsBytes(bytes, flush: true);
                 await OpenFilex.open(f.path);
               },
@@ -75,5 +87,3 @@ class AttachmentBubble extends StatelessWidget {
     );
   }
 }
-
-

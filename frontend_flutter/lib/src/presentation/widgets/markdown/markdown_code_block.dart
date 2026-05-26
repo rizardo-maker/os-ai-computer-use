@@ -45,7 +45,8 @@ class _MarkdownCodeBlockState extends State<MarkdownCodeBlock> {
             children: [
               if (widget.language.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: colorScheme.surface.withValues(alpha: 0.7),
                     borderRadius: BorderRadius.circular(4),
@@ -54,7 +55,8 @@ class _MarkdownCodeBlockState extends State<MarkdownCodeBlock> {
                     widget.language,
                     style: TextStyle(
                       fontSize: 10,
-                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                      color:
+                          colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                       fontFamily: 'monospace',
                     ),
                   ),

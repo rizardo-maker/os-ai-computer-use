@@ -341,56 +341,37 @@ class TestNoOpStubs:
         assert p.ensure_screen_recording() is None
 
 
-# --------------- computer.py import error handling ---------------
+# --------------- computer.py import boundary ---------------
 
 
-class TestComputerPyAutoGUIImportGuard:
-    """Test the try/except around import pyautogui in computer.py."""
+class TestComputerPyAutoGUIBoundary:
+    """computer.py should be importable without importing display drivers."""
 
-    def test_keyerror_on_linux_gives_importerror(self, monkeypatch):
-        """Simulate KeyError('DISPLAY') from pyautogui X11 backend on Linux."""
+    def test_computer_module_import_does_not_import_pyautogui(self, monkeypatch):
         import importlib
-        monkeypatch.setattr("sys.platform", "linux")
 
         original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
 
         def fake_import(name, *args, **kwargs):
             if name == "pyautogui":
-                raise KeyError("DISPLAY")
+                raise AssertionError("computer.py must not import pyautogui")
             return original_import(name, *args, **kwargs)
 
-        # Remove cached pyautogui and computer modules
         mods_to_remove = [k for k in sys.modules if k.startswith("os_ai_core.tools.computer") or k == "pyautogui"]
         saved = {k: sys.modules.pop(k) for k in mods_to_remove if k in sys.modules}
 
         try:
             with patch("builtins.__import__", side_effect=fake_import):
-                with pytest.raises(ImportError, match="X11 display"):
-                    importlib.import_module("os_ai_core.tools.computer")
-        finally:
-            # Restore modules
-            sys.modules.update(saved)
-
-    def test_non_display_error_on_linux_reraises(self, monkeypatch):
-        """Non-display exceptions should be re-raised as-is on Linux."""
-        import importlib
-        monkeypatch.setattr("sys.platform", "linux")
-
-        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "pyautogui":
-                raise RuntimeError("some other error")
-            return original_import(name, *args, **kwargs)
-
-        mods_to_remove = [k for k in sys.modules if k.startswith("os_ai_core.tools.computer")]
-        saved = {k: sys.modules.pop(k) for k in mods_to_remove if k in sys.modules}
-
-        try:
-            with patch("builtins.__import__", side_effect=fake_import):
-                with pytest.raises(RuntimeError, match="some other error"):
-                    importlib.import_module("os_ai_core.tools.computer")
+                importlib.import_module("os_ai_core.tools.computer")
         finally:
             sys.modules.update(saved)
 
+    def test_linux_factory_still_reports_missing_display(self, monkeypatch):
+        from os_ai_os.platform.factory import build_platform
+
+        monkeypatch.delenv("DISPLAY", raising=False)
+        monkeypatch.setattr("platform.system", lambda: "Linux")
+
+        with pytest.raises(RuntimeError, match="No X11 display"):
+            build_platform()
 

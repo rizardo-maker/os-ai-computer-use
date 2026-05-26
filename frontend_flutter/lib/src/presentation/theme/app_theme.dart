@@ -91,28 +91,41 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
   }
 
   @override
-  ThemeExtension<AppThemeColors> lerp(ThemeExtension<AppThemeColors>? other, double t) {
+  ThemeExtension<AppThemeColors> lerp(
+      ThemeExtension<AppThemeColors>? other, double t) {
     if (other is! AppThemeColors) return this;
     return AppThemeColors(
       userBubbleBg: Color.lerp(userBubbleBg, other.userBubbleBg, t)!,
       userBubbleFg: Color.lerp(userBubbleFg, other.userBubbleFg, t)!,
-      assistantBubbleBg: Color.lerp(assistantBubbleBg, other.assistantBubbleBg, t)!,
-      assistantBubbleFg: Color.lerp(assistantBubbleFg, other.assistantBubbleFg, t)!,
+      assistantBubbleBg:
+          Color.lerp(assistantBubbleBg, other.assistantBubbleBg, t)!,
+      assistantBubbleFg:
+          Color.lerp(assistantBubbleFg, other.assistantBubbleFg, t)!,
       surfaceBorder: Color.lerp(surfaceBorder, other.surfaceBorder, t)!,
       usageBorder: Color.lerp(usageBorder, other.usageBorder, t)!,
       usageFill: Color.lerp(usageFill, other.usageFill, t)!,
-      actionTealBorder: Color.lerp(actionTealBorder, other.actionTealBorder, t)!,
+      actionTealBorder:
+          Color.lerp(actionTealBorder, other.actionTealBorder, t)!,
       actionTealFill: Color.lerp(actionTealFill, other.actionTealFill, t)!,
-      actionIndigoBorder: Color.lerp(actionIndigoBorder, other.actionIndigoBorder, t)!,
-      actionIndigoFill: Color.lerp(actionIndigoFill, other.actionIndigoFill, t)!,
-      actionPurpleBorder: Color.lerp(actionPurpleBorder, other.actionPurpleBorder, t)!,
-      actionPurpleFill: Color.lerp(actionPurpleFill, other.actionPurpleFill, t)!,
-      actionBlueGreyBorder: Color.lerp(actionBlueGreyBorder, other.actionBlueGreyBorder, t)!,
-      actionBlueGreyFill: Color.lerp(actionBlueGreyFill, other.actionBlueGreyFill, t)!,
-      actionGreenBorder: Color.lerp(actionGreenBorder, other.actionGreenBorder, t)!,
+      actionIndigoBorder:
+          Color.lerp(actionIndigoBorder, other.actionIndigoBorder, t)!,
+      actionIndigoFill:
+          Color.lerp(actionIndigoFill, other.actionIndigoFill, t)!,
+      actionPurpleBorder:
+          Color.lerp(actionPurpleBorder, other.actionPurpleBorder, t)!,
+      actionPurpleFill:
+          Color.lerp(actionPurpleFill, other.actionPurpleFill, t)!,
+      actionBlueGreyBorder:
+          Color.lerp(actionBlueGreyBorder, other.actionBlueGreyBorder, t)!,
+      actionBlueGreyFill:
+          Color.lerp(actionBlueGreyFill, other.actionBlueGreyFill, t)!,
+      actionGreenBorder:
+          Color.lerp(actionGreenBorder, other.actionGreenBorder, t)!,
       actionGreenFill: Color.lerp(actionGreenFill, other.actionGreenFill, t)!,
-      actionOrangeBorder: Color.lerp(actionOrangeBorder, other.actionOrangeBorder, t)!,
-      actionOrangeFill: Color.lerp(actionOrangeFill, other.actionOrangeFill, t)!,
+      actionOrangeBorder:
+          Color.lerp(actionOrangeBorder, other.actionOrangeBorder, t)!,
+      actionOrangeFill:
+          Color.lerp(actionOrangeFill, other.actionOrangeFill, t)!,
     );
   }
 }
@@ -146,7 +159,8 @@ class AppThemeStyles extends ThemeExtension<AppThemeStyles> {
   }
 
   @override
-  ThemeExtension<AppThemeStyles> lerp(ThemeExtension<AppThemeStyles>? other, double t) {
+  ThemeExtension<AppThemeStyles> lerp(
+      ThemeExtension<AppThemeStyles>? other, double t) {
     if (other is! AppThemeStyles) return this;
     return AppThemeStyles(
       body: TextStyle.lerp(body, other.body, t)!,
@@ -162,7 +176,8 @@ class AppTheme {
   final AppThemeStyles styles;
   const AppTheme(this.colors, this.styles);
 
-  TextStyle style(TextStyle Function(AppThemeStyles) s, Color Function(AppThemeColors) c) {
+  TextStyle style(
+      TextStyle Function(AppThemeStyles) s, Color Function(AppThemeColors) c) {
     return s(styles).copyWith(color: c(colors));
   }
 }
@@ -173,9 +188,7 @@ extension AppThemeContextExt on BuildContext {
     final styles = Theme.of(this).extension<AppThemeStyles>();
     return AppTheme(colors!, styles!);
   }
+
   AppThemeColors get themeColors => Theme.of(this).extension<AppThemeColors>()!;
   AppThemeStyles get themeStyles => Theme.of(this).extension<AppThemeStyles>()!;
 }
-
-
-

@@ -12,7 +12,7 @@ void main() {
     group('Anthropic API key validation', () {
       test('should accept valid Anthropic API key format', () {
         // Valid Anthropic key: sk-ant- + 95+ characters
-        final validKey = 'sk-ant-' + 'a' * 95;
+        final validKey = 'sk-ant-${'a' * 95}';
         final result = validator.validateAnthropicKey(validKey);
         expect(result.isValid, true);
         expect(result.error, isNull);
@@ -40,7 +40,7 @@ void main() {
     group('OpenAI API key validation', () {
       test('should accept valid OpenAI API key format', () {
         // Valid OpenAI key: sk- + 32+ characters
-        final validKey = 'sk-' + 'a' * 32;
+        final validKey = 'sk-${'a' * 32}';
         final result = validator.validateOpenAIKey(validKey);
         expect(result.isValid, true);
         expect(result.error, isNull);
@@ -54,14 +54,14 @@ void main() {
       });
 
       test('should accept sk-svcacct- format key', () {
-        final validKey = 'sk-svcacct-' + 'a1b2c3d4e5f6g7h8' * 3;
+        final validKey = 'sk-svcacct-${'a1b2c3d4e5f6g7h8' * 3}';
         final result = validator.validateOpenAIKey(validKey);
         expect(result.isValid, true);
         expect(result.error, isNull);
       });
 
       test('should accept long sk-proj- keys', () {
-        final validKey = 'sk-proj-' + 'abcDEF012345_-' * 10;
+        final validKey = 'sk-proj-${'abcDEF012345_-' * 10}';
         final result = validator.validateOpenAIKey(validKey);
         expect(result.isValid, true);
         expect(result.error, isNull);
@@ -85,7 +85,7 @@ void main() {
       });
 
       test('should not accept Anthropic key as valid OpenAI key', () {
-        final anthropicKey = 'sk-ant-' + 'a' * 95;
+        final anthropicKey = 'sk-ant-${'a' * 95}';
         final result = validator.validateOpenAIKey(anthropicKey);
         expect(result.isValid, false);
       });
@@ -93,13 +93,13 @@ void main() {
 
     group('Provider detection', () {
       test('should detect Anthropic provider', () {
-        final validKey = 'sk-ant-' + 'a' * 95;
+        final validKey = 'sk-ant-${'a' * 95}';
         final provider = validator.detectProvider(validKey);
         expect(provider, ApiProvider.anthropic);
       });
 
       test('should detect OpenAI provider', () {
-        final validKey = 'sk-' + 'a' * 32;
+        final validKey = 'sk-${'a' * 32}';
         final provider = validator.detectProvider(validKey);
         expect(provider, ApiProvider.openai);
       });
@@ -112,7 +112,7 @@ void main() {
 
       test('should not detect Anthropic key as OpenAI provider', () {
         // Short Anthropic-prefix key that fails _anthropicRegex but should NOT match _openaiRegex
-        final shortAnthropicKey = 'sk-ant-' + 'a' * 30;
+        final shortAnthropicKey = 'sk-ant-${'a' * 30}';
         final provider = validator.detectProvider(shortAnthropicKey);
         expect(provider, isNot(ApiProvider.openai));
       });
@@ -130,7 +130,8 @@ void main() {
 
     group('getKeyRequirements', () {
       test('should return requirements for Anthropic', () {
-        final requirements = validator.getKeyRequirements(ApiProvider.anthropic);
+        final requirements =
+            validator.getKeyRequirements(ApiProvider.anthropic);
         expect(requirements, contains('sk-ant-'));
         expect(requirements, contains('console.anthropic.com'));
       });

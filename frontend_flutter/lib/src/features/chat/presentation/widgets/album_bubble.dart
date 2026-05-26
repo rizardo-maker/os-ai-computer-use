@@ -17,15 +17,20 @@ class AlbumBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: isUser ? context.themeColors.userBubbleBg : context.themeColors.assistantBubbleBg,
+          color: isUser
+              ? context.themeColors.userBubbleBg
+              : context.themeColors.assistantBubbleBg,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Album (' + items.length.toString() + ')', style: isUser
-                ? context.theme.style((t) => t.bodySmall, (c) => c.userBubbleFg)
-                : context.theme.style((t) => t.bodySmall, (c) => c.assistantBubbleFg)),
+            Text('Album (${items.length})',
+                style: isUser
+                    ? context.theme
+                        .style((t) => t.bodySmall, (c) => c.userBubbleFg)
+                    : context.theme
+                        .style((t) => t.bodySmall, (c) => c.assistantBubbleFg)),
             const SizedBox(height: 8),
             LayoutBuilder(builder: (context, constraints) {
               final w = constraints.maxWidth;
@@ -59,13 +64,17 @@ class AlbumBubble extends StatelessWidget {
                           : () {
                               Navigator.of(context).push(
                                 MaterialPageRoute(
-                                  builder: (_) => LightboxViewer(base64Images: previews, initialIndex: initial),
+                                  builder: (_) => LightboxViewer(
+                                      base64Images: previews,
+                                      initialIndex: initial),
                                 ),
                               );
                             },
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(const Base64Decoder().convert(preview), fit: BoxFit.cover),
+                        child: Image.memory(
+                            const Base64Decoder().convert(preview),
+                            fit: BoxFit.cover),
                       ),
                     );
                   }
@@ -86,5 +95,3 @@ class AlbumBubble extends StatelessWidget {
     );
   }
 }
-
-

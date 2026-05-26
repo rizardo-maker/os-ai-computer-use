@@ -47,7 +47,8 @@ class _ChatMessagesListState extends State<ChatMessagesList> {
   void _scrollToBottom() {
     if (!_ctrl.hasClients) return;
     final target = _ctrl.position.maxScrollExtent;
-    _ctrl.animateTo(target, duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+    _ctrl.animateTo(target,
+        duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
     // Re-check after animation — maxScrollExtent may have changed during layout
     Future.delayed(const Duration(milliseconds: 250), () {
       if (!mounted || !_ctrl.hasClients) return;
@@ -105,7 +106,9 @@ class _ChatMessagesListState extends State<ChatMessagesList> {
           itemBuilder: (_, i) {
             final group = groups[i];
             // Peek at next group to attach usage badge to current message
-            final nextUsage = (i + 1 < groups.length && groups[i + 1].length == 1 && groups[i + 1].first.kind == 'usage')
+            final nextUsage = (i + 1 < groups.length &&
+                    groups[i + 1].length == 1 &&
+                    groups[i + 1].first.kind == 'usage')
                 ? groups[i + 1].first
                 : null;
 
@@ -115,20 +118,30 @@ class _ChatMessagesListState extends State<ChatMessagesList> {
             final m = group.first;
             if (m.kind == 'attachment_album') {
               final list = (m.meta?['items'] as List?)?.cast<Map>() ?? const [];
-              final items = list.map((e) => e.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))).toList();
+              final items = list
+                  .map((e) => e.map(
+                      (k, v) => MapEntry(k.toString(), v?.toString() ?? '')))
+                  .toList();
               return AlbumBubble(items: items, isUser: m.role == 'user');
             }
             if (m.kind == 'attachment') {
               final name = (m.meta?['name'] as String?) ?? (m.text ?? 'file');
               final fileId = (m.meta?['fileId'] as String?) ?? '';
               final preview = (m.meta?['previewBase64'] as String?);
-              return AttachmentBubble(name: name, fileId: fileId, isUser: m.role == 'user', previewBase64: preview);
+              return AttachmentBubble(
+                  name: name,
+                  fileId: fileId,
+                  isUser: m.role == 'user',
+                  previewBase64: preview);
             }
-            if (m.kind == 'screenshot' && m.imageBase64 != null && m.imageBase64!.isNotEmpty) {
+            if (m.kind == 'screenshot' &&
+                m.imageBase64 != null &&
+                m.imageBase64!.isNotEmpty) {
               final screenshot = GestureDetector(
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => LightboxViewer(base64Images: [m.imageBase64!]),
+                    builder: (_) =>
+                        LightboxViewer(base64Images: [m.imageBase64!]),
                   ));
                 },
                 child: ClipRRect(
@@ -158,7 +171,9 @@ class _ChatMessagesListState extends State<ChatMessagesList> {
               // Skip — already attached as badge to previous message
               if (i > 0) {
                 final prevGroup = groups[i - 1];
-                final prevKind = prevGroup.length == 1 ? prevGroup.first.kind : 'action_group';
+                final prevKind = prevGroup.length == 1
+                    ? prevGroup.first.kind
+                    : 'action_group';
                 if (prevKind != 'usage') {
                   return const SizedBox.shrink();
                 }
@@ -168,20 +183,27 @@ class _ChatMessagesListState extends State<ChatMessagesList> {
                 alignment: Alignment.centerRight,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: _UsageBadge(meta: m.meta ?? const {}, useInfoColor: true),
+                  child:
+                      _UsageBadge(meta: m.meta ?? const {}, useInfoColor: true),
                 ),
               );
             }
+            if (m.kind == 'approval') {
+              return _ApprovalCard(message: m);
+            }
             if (m.kind == 'action') {
               final meta = (m.meta ?? const {});
-              final inner = (meta['meta'] is Map) ? (meta['meta'] as Map) : const {};
-              final actionName = (inner['action'] as String?) ?? (meta['name'] as String? ?? '');
+              final inner =
+                  (meta['meta'] is Map) ? (meta['meta'] as Map) : const {};
+              final actionName = (inner['action'] as String?) ??
+                  (meta['name'] as String? ?? '');
               // Skip screenshot actions — the screenshot image follows right after
               if (actionName.toLowerCase() == 'screenshot') {
                 return const SizedBox.shrink();
               }
               // Skip tool_result confirmations (e.g. {"text": "ok"})
-              if (actionName.toLowerCase() == 'tool_result' || actionName.isEmpty) {
+              if (actionName.toLowerCase() == 'tool_result' ||
+                  actionName.isEmpty) {
                 return const SizedBox.shrink();
               }
               final status = (m.meta?['status'] as String? ?? '').toLowerCase();
@@ -193,7 +215,8 @@ class _ChatMessagesListState extends State<ChatMessagesList> {
                 alignment: Alignment.centerLeft,
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 6),
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
                   decoration: BoxDecoration(
                     color: fill,
                     borderRadius: BorderRadius.circular(10),
@@ -205,13 +228,16 @@ class _ChatMessagesListState extends State<ChatMessagesList> {
                       Icon(icon, size: 16, color: border),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 6),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 2, horizontal: 6),
                         decoration: BoxDecoration(
                           color: border.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: border.withValues(alpha: 0.4)),
+                          border:
+                              Border.all(color: border.withValues(alpha: 0.4)),
                         ),
-                        child: Text(status.isEmpty ? 'start' : status, style: Theme.of(context).textTheme.labelSmall),
+                        child: Text(status.isEmpty ? 'start' : status,
+                            style: Theme.of(context).textTheme.labelSmall),
                       ),
                       const SizedBox(width: 8),
                       Flexible(
@@ -231,27 +257,37 @@ class _ChatMessagesListState extends State<ChatMessagesList> {
                 // Thinking indicator: plain text with spinner
                 final bubble = Container(
                   margin: const EdgeInsets.symmetric(vertical: 6),
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
                   decoration: BoxDecoration(
                     color: context.themeColors.assistantBubbleBg,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: context.themeColors.surfaceBorder),
+                    border:
+                        Border.all(color: context.themeColors.surfaceBorder),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Icon(Icons.psychology, size: 14, color: context.themeColors.assistantBubbleFg),
+                      Icon(Icons.psychology,
+                          size: 14,
+                          color: context.themeColors.assistantBubbleFg),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
                           m.text ?? '',
                           softWrap: true,
-                          style: context.theme.style((t) => t.bodySmall, (c) => c.assistantBubbleFg),
+                          style: context.theme.style(
+                              (t) => t.bodySmall, (c) => c.assistantBubbleFg),
                         ),
                       ),
                       const SizedBox(width: 6),
-                      SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: context.themeColors.assistantBubbleFg)),
+                      SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: context.themeColors.assistantBubbleFg)),
                     ],
                   ),
                 );
@@ -262,28 +298,38 @@ class _ChatMessagesListState extends State<ChatMessagesList> {
               final bubble = IntrinsicWidth(
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 6),
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
                   constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                   decoration: BoxDecoration(
                     color: context.themeColors.assistantBubbleBg,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: context.themeColors.surfaceBorder),
+                    border:
+                        Border.all(color: context.themeColors.surfaceBorder),
                   ),
                   child: (m.text != null && m.text!.isNotEmpty)
                       ? MarkdownMessage(text: m.text!)
                       : const SizedBox.shrink(),
                 ),
               );
-              if (m.text == null || m.text!.isEmpty) return _withUsageBadge(bubble, nextUsage);
+              if (m.text == null || m.text!.isEmpty) {
+                return _withUsageBadge(bubble, nextUsage);
+              }
               return _withUsageBadge(bubble, nextUsage, copyText: m.text);
             }
             if (m.kind == 'system') {
-              return _SystemChip(text: m.text ?? '', isError: m.meta?['isError'] == true);
+              return _SystemChip(
+                  text: m.text ?? '', isError: m.meta?['isError'] == true);
             }
-            final bubble = _MessageBubble(role: m.role, text: m.text ?? '', ts: m.ts);
-            final align = m.role == 'user' ? Alignment.centerRight : Alignment.centerLeft;
-            if ((m.text ?? '').isEmpty) return _withUsageBadge(bubble, nextUsage, alignment: align);
-            return _withUsageBadge(bubble, nextUsage, copyText: m.text, alignment: align);
+            final bubble =
+                _MessageBubble(role: m.role, text: m.text ?? '', ts: m.ts);
+            final align =
+                m.role == 'user' ? Alignment.centerRight : Alignment.centerLeft;
+            if ((m.text ?? '').isEmpty) {
+              return _withUsageBadge(bubble, nextUsage, alignment: align);
+            }
+            return _withUsageBadge(bubble, nextUsage,
+                copyText: m.text, alignment: align);
           },
         );
       },
@@ -297,7 +343,11 @@ class _MessageOverlay extends StatefulWidget {
   final dynamic usageMsg;
   final String? copyText;
   final Alignment alignment;
-  const _MessageOverlay({required this.child, this.usageMsg, this.copyText, this.alignment = Alignment.centerLeft});
+  const _MessageOverlay(
+      {required this.child,
+      this.usageMsg,
+      this.copyText,
+      this.alignment = Alignment.centerLeft});
 
   @override
   State<_MessageOverlay> createState() => _MessageOverlayState();
@@ -329,71 +379,86 @@ class _MessageOverlayState extends State<_MessageOverlay> {
     return Align(
       alignment: widget.alignment,
       child: MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          widget.child,
-          if (showButtons)
-            // Use LayoutBuilder to find child's actual rendered bounds
-            Positioned.fill(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        right: -12,
-                        top: 2,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (hasUsage)
-                              _UsageBadge(meta: widget.usageMsg.meta ?? const {}, useInfoColor: true),
-                            if (_hovered && hasCopy) ...[
-                              if (hasUsage) const SizedBox(height: 4),
-                              GestureDetector(
-                                onTap: _copy,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            widget.child,
+            if (showButtons)
+              // Use LayoutBuilder to find child's actual rendered bounds
+              Positioned.fill(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned(
+                          right: -12,
+                          top: 2,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (hasUsage)
+                                _UsageBadge(
+                                    meta: widget.usageMsg.meta ?? const {},
+                                    useInfoColor: true),
+                              if (_hovered && hasCopy) ...[
+                                if (hasUsage) const SizedBox(height: 4),
+                                GestureDetector(
+                                  onTap: _copy,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .surface
+                                          .withValues(alpha: 0.9),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .outline
+                                            .withValues(alpha: 0.2),
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      _copied ? Icons.check : Icons.copy,
+                                      size: 13,
+                                      color: _copied
+                                          ? Colors.green
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
                                     ),
                                   ),
-                                  child: Icon(
-                                    _copied ? Icons.check : Icons.copy,
-                                    size: 13,
-                                    color: _copied
-                                        ? Colors.green
-                                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
                                 ),
-                              ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
-                      ),
-                    ],
-                  );
-                },
+                      ],
+                    );
+                  },
+                ),
               ),
-            ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
 }
 
-Widget _withUsageBadge(Widget child, dynamic usageMsg, {String? copyText, Alignment alignment = Alignment.centerLeft}) {
+Widget _withUsageBadge(Widget child, dynamic usageMsg,
+    {String? copyText, Alignment alignment = Alignment.centerLeft}) {
   if (usageMsg == null && (copyText == null || copyText.isEmpty)) {
     return Align(alignment: alignment, child: child);
   }
-  return _MessageOverlay(usageMsg: usageMsg, copyText: copyText, alignment: alignment, child: child);
+  return _MessageOverlay(
+      usageMsg: usageMsg,
+      copyText: copyText,
+      alignment: alignment,
+      child: child);
 }
 
 /// Groups consecutive 'action' messages together.
@@ -410,7 +475,11 @@ List<List<dynamic>> _groupMessages(List messages) {
       if (actionName == 'screenshot') continue;
       // Skip tool_result confirmations
       final metaName = ((meta['name'] as String?) ?? '').toLowerCase();
-      if (actionName == 'tool_result' || metaName == 'tool_result' || actionName.isEmpty) continue;
+      if (actionName == 'tool_result' ||
+          metaName == 'tool_result' ||
+          actionName.isEmpty) {
+        continue;
+      }
 
       currentActions ??= [];
       currentActions.add(m);
@@ -461,7 +530,8 @@ class _ActionGroupState extends State<_ActionGroup> {
               onTap: () => setState(() => _expanded = !_expanded),
               borderRadius: BorderRadius.circular(10),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -470,8 +540,8 @@ class _ActionGroupState extends State<_ActionGroup> {
                     Text(
                       '$count actions',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                            fontWeight: FontWeight.w600,
+                          ),
                     ),
                     const SizedBox(width: 4),
                     // Action type summary (e.g. "3× click, 2× drag")
@@ -479,8 +549,8 @@ class _ActionGroupState extends State<_ActionGroup> {
                       child: Text(
                         _buildSummary(),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -541,18 +611,31 @@ class _ActionGroupState extends State<_ActionGroup> {
 
   String _shortLabel(String action) {
     switch (action.toLowerCase()) {
-      case 'left_click': return 'click';
-      case 'double_click': return 'dblclick';
-      case 'right_click': return 'rclick';
-      case 'left_click_drag': return 'drag';
-      case 'left_mouse_down': return 'mousedown';
-      case 'left_mouse_up': return 'mouseup';
-      case 'mouse_move': return 'move';
-      case 'type': return 'type';
-      case 'key': case 'hold_key': return 'key';
-      case 'scroll': return 'scroll';
-      case 'screenshot': return 'screenshot';
-      default: return action;
+      case 'left_click':
+        return 'click';
+      case 'double_click':
+        return 'dblclick';
+      case 'right_click':
+        return 'rclick';
+      case 'left_click_drag':
+        return 'drag';
+      case 'left_mouse_down':
+        return 'mousedown';
+      case 'left_mouse_up':
+        return 'mouseup';
+      case 'mouse_move':
+        return 'move';
+      case 'type':
+        return 'type';
+      case 'key':
+      case 'hold_key':
+        return 'key';
+      case 'scroll':
+        return 'scroll';
+      case 'screenshot':
+        return 'screenshot';
+      default:
+        return action;
     }
   }
 }
@@ -582,9 +665,9 @@ class _ActionRow extends StatelessWidget {
             Text(
               '$index.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                fontSize: 11,
-              ),
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    fontSize: 11,
+                  ),
             ),
             const SizedBox(width: 6),
             _iconWidget(action, colorScheme.onSurfaceVariant),
@@ -595,7 +678,9 @@ class _ActionRow extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-            Icon(Icons.chevron_right, size: 14, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+            Icon(Icons.chevron_right,
+                size: 14,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
           ],
         ),
       ),
@@ -604,16 +689,32 @@ class _ActionRow extends StatelessWidget {
 
   static Widget _iconWidget(String action, Color color) {
     const s = 14.0;
-    if (action == 'left_click' || action == 'middle_click') return Icon(Icons.ads_click, size: s, color: color);
-    if (action == 'double_click' || action == 'triple_click') return Icon(Icons.touch_app, size: s, color: color);
-    if (action == 'right_click') return Icon(Icons.more_horiz, size: s, color: color);
-    if (action == 'left_mouse_down' || action == 'left_mouse_up') return Icon(Icons.ads_click, size: s, color: color);
-    if (action.contains('drag')) return Icon(Icons.open_with, size: s, color: color);
-    if (action == 'mouse_move') return Icon(Icons.near_me, size: s, color: color);
+    if (action == 'left_click' || action == 'middle_click') {
+      return Icon(Icons.ads_click, size: s, color: color);
+    }
+    if (action == 'double_click' || action == 'triple_click') {
+      return Icon(Icons.touch_app, size: s, color: color);
+    }
+    if (action == 'right_click') {
+      return Icon(Icons.more_horiz, size: s, color: color);
+    }
+    if (action == 'left_mouse_down' || action == 'left_mouse_up') {
+      return Icon(Icons.ads_click, size: s, color: color);
+    }
+    if (action.contains('drag')) {
+      return Icon(Icons.open_with, size: s, color: color);
+    }
+    if (action == 'mouse_move') {
+      return Icon(Icons.near_me, size: s, color: color);
+    }
     if (action == 'type') return Icon(Icons.keyboard, size: s, color: color);
-    if (action == 'key' || action == 'hold_key') return Icon(Icons.keyboard_command_key, size: s, color: color);
+    if (action == 'key' || action == 'hold_key') {
+      return Icon(Icons.keyboard_command_key, size: s, color: color);
+    }
     if (action == 'scroll') return Icon(Icons.swap_vert, size: s, color: color);
-    if (action == 'screenshot') return Icon(Icons.screenshot_monitor, size: s, color: color);
+    if (action == 'screenshot') {
+      return Icon(Icons.screenshot_monitor, size: s, color: color);
+    }
     return Icon(Icons.build, size: s, color: color);
   }
 
@@ -624,11 +725,21 @@ class _ActionRow extends StatelessWidget {
       return 'Move → ${_coord(inner['coordinate'])}';
     }
     if (action == 'left_click') return 'Click ${_coord(inner['coordinate'])}';
-    if (action == 'double_click') return 'Double click ${_coord(inner['coordinate'])}';
-    if (action == 'triple_click') return 'Triple click ${_coord(inner['coordinate'])}';
-    if (action == 'right_click') return 'Right click ${_coord(inner['coordinate'])}';
-    if (action == 'left_mouse_down') return 'Mouse down ${_coord(inner['coordinate'])}';
-    if (action == 'left_mouse_up') return 'Mouse up ${_coord(inner['coordinate'])}';
+    if (action == 'double_click') {
+      return 'Double click ${_coord(inner['coordinate'])}';
+    }
+    if (action == 'triple_click') {
+      return 'Triple click ${_coord(inner['coordinate'])}';
+    }
+    if (action == 'right_click') {
+      return 'Right click ${_coord(inner['coordinate'])}';
+    }
+    if (action == 'left_mouse_down') {
+      return 'Mouse down ${_coord(inner['coordinate'])}';
+    }
+    if (action == 'left_mouse_up') {
+      return 'Mouse up ${_coord(inner['coordinate'])}';
+    }
     if (action == 'left_click_drag') {
       return 'Drag ${_coord(inner['start_coordinate'] ?? inner['start'])} → ${_coord(inner['end_coordinate'] ?? inner['end'])}';
     }
@@ -682,19 +793,19 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-
-
 class _MessageBubble extends StatelessWidget {
   final String role;
   final String text;
   final DateTime ts;
-  const _MessageBubble({required this.role, required this.text, required this.ts});
+  const _MessageBubble(
+      {required this.role, required this.text, required this.ts});
 
   bool get isUser => role == 'user';
 
   @override
   Widget build(BuildContext context) {
-    final timeStr = '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
+    final timeStr =
+        '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
     final timeColor = isUser
         ? Colors.white.withValues(alpha: 0.6)
         : Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5);
@@ -702,7 +813,8 @@ class _MessageBubble extends StatelessWidget {
 
     if (isUser) {
       // User messages: plain text with inline timestamp (original layout)
-      final textStyle = context.theme.style((t) => t.body, (c) => c.userBubbleFg);
+      final textStyle =
+          context.theme.style((t) => t.body, (c) => c.userBubbleFg);
       const timePadding = '              ';
       return Container(
         margin: const EdgeInsets.symmetric(vertical: 6),
@@ -764,33 +876,77 @@ class _MessageBubble extends StatelessWidget {
 (IconData, Color, Color) _actionBadgeFor(BuildContext context, String name) {
   final n = name.toLowerCase();
   if (n == 'screenshot') {
-    return (Icons.screenshot_monitor, context.themeColors.actionTealBorder, context.themeColors.actionTealFill);
+    return (
+      Icons.screenshot_monitor,
+      context.themeColors.actionTealBorder,
+      context.themeColors.actionTealFill
+    );
   }
   if (n == 'mouse_move') {
-    return (Icons.near_me, context.themeColors.actionIndigoBorder, context.themeColors.actionIndigoFill);
+    return (
+      Icons.near_me,
+      context.themeColors.actionIndigoBorder,
+      context.themeColors.actionIndigoFill
+    );
   }
-  if (n == 'left_click' || n == 'double_click' || n == 'triple_click' || n == 'right_click' || n == 'middle_click') {
-    return (Icons.ads_click, context.themeColors.actionPurpleBorder, context.themeColors.actionPurpleFill);
+  if (n == 'left_click' ||
+      n == 'double_click' ||
+      n == 'triple_click' ||
+      n == 'right_click' ||
+      n == 'middle_click') {
+    return (
+      Icons.ads_click,
+      context.themeColors.actionPurpleBorder,
+      context.themeColors.actionPurpleFill
+    );
   }
   if (n == 'left_mouse_down' || n == 'left_mouse_up') {
-    return (Icons.ads_click, context.themeColors.actionPurpleBorder, context.themeColors.actionPurpleFill);
+    return (
+      Icons.ads_click,
+      context.themeColors.actionPurpleBorder,
+      context.themeColors.actionPurpleFill
+    );
   }
   if (n == 'left_click_drag') {
-    return (Icons.open_with, context.themeColors.actionPurpleBorder, context.themeColors.actionPurpleFill);
+    return (
+      Icons.open_with,
+      context.themeColors.actionPurpleBorder,
+      context.themeColors.actionPurpleFill
+    );
   }
   if (n == 'type') {
-    return (Icons.keyboard, context.themeColors.actionBlueGreyBorder, context.themeColors.actionBlueGreyFill);
+    return (
+      Icons.keyboard,
+      context.themeColors.actionBlueGreyBorder,
+      context.themeColors.actionBlueGreyFill
+    );
   }
   if (n == 'key' || n == 'hold_key') {
-    return (Icons.keyboard_command_key, context.themeColors.actionBlueGreyBorder, context.themeColors.actionBlueGreyFill);
+    return (
+      Icons.keyboard_command_key,
+      context.themeColors.actionBlueGreyBorder,
+      context.themeColors.actionBlueGreyFill
+    );
   }
   if (n == 'scroll') {
-    return (Icons.swap_vert, context.themeColors.actionGreenBorder, context.themeColors.actionGreenFill);
+    return (
+      Icons.swap_vert,
+      context.themeColors.actionGreenBorder,
+      context.themeColors.actionGreenFill
+    );
   }
   if (n == 'wait') {
-    return (Icons.hourglass_empty, context.themeColors.actionOrangeBorder, context.themeColors.actionOrangeFill);
+    return (
+      Icons.hourglass_empty,
+      context.themeColors.actionOrangeBorder,
+      context.themeColors.actionOrangeFill
+    );
   }
-  return (Icons.build, context.themeColors.actionPurpleBorder, context.themeColors.actionPurpleFill);
+  return (
+    Icons.build,
+    context.themeColors.actionPurpleBorder,
+    context.themeColors.actionPurpleFill
+  );
 }
 
 class _UsageBadge extends StatelessWidget {
@@ -809,7 +965,8 @@ class _UsageBadge extends StatelessWidget {
 
     // Accumulated totals from ChatStore
     final store = context.read<ChatStore?>();
-    final accumTok = (store?.totalInputTokens ?? 0) + (store?.totalOutputTokens ?? 0);
+    final accumTok =
+        (store?.totalInputTokens ?? 0) + (store?.totalOutputTokens ?? 0);
     final accumUsd = store?.totalUsd ?? 0.0;
 
     final borderColor = useInfoColor
@@ -826,13 +983,17 @@ class _UsageBadge extends StatelessWidget {
       richMessage: TextSpan(
         style: const TextStyle(fontSize: 12, height: 1.5),
         children: [
-          const TextSpan(text: 'Input:  ', style: TextStyle(fontWeight: FontWeight.w600)),
+          const TextSpan(
+              text: 'Input:  ', style: TextStyle(fontWeight: FontWeight.w600)),
           TextSpan(text: '$inTok tokens  \$${inUsd.toStringAsFixed(6)}\n'),
-          const TextSpan(text: 'Output: ', style: TextStyle(fontWeight: FontWeight.w600)),
+          const TextSpan(
+              text: 'Output: ', style: TextStyle(fontWeight: FontWeight.w600)),
           TextSpan(text: '$outTok tokens  \$${outUsd.toStringAsFixed(6)}\n'),
-          const TextSpan(text: 'Step:   ', style: TextStyle(fontWeight: FontWeight.w600)),
+          const TextSpan(
+              text: 'Step:   ', style: TextStyle(fontWeight: FontWeight.w600)),
           TextSpan(text: '$stepTok tokens  \$${stepUsd.toStringAsFixed(6)}\n'),
-          const TextSpan(text: 'Total:  ', style: TextStyle(fontWeight: FontWeight.w600)),
+          const TextSpan(
+              text: 'Total:  ', style: TextStyle(fontWeight: FontWeight.w600)),
           TextSpan(text: '$accumTok tokens  \$${accumUsd.toStringAsFixed(4)}'),
         ],
       ),
@@ -854,6 +1015,126 @@ class _UsageBadge extends StatelessWidget {
   }
 }
 
+class _ApprovalCard extends StatelessWidget {
+  final dynamic message;
+  const _ApprovalCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = (message.meta ?? const {}) as Map;
+    final jobId = (meta['jobId'] ?? '').toString();
+    final approvalId = (meta['approvalId'] ?? '').toString();
+    final risk = (meta['risk'] ?? '').toString();
+    final toolName = (meta['toolName'] ?? '').toString();
+    final summary = (message.text ?? '').toString();
+    final store = context.read<ChatStore?>();
+
+    Future<void> respond(bool approved) async {
+      if (store == null || jobId.isEmpty || approvalId.isEmpty) return;
+      await store.respondApproval(
+        messageId: message.id.toString(),
+        jobId: jobId,
+        approvalId: approvalId,
+        approved: approved,
+      );
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.all(12),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.86),
+        decoration: BoxDecoration(
+          color: colorScheme.errorContainer.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: colorScheme.error.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.security, size: 18, color: colorScheme.error),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    summary,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onErrorContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (toolName.isNotEmpty)
+                  _ApprovalPill(icon: Icons.build, text: toolName),
+                if (risk.isNotEmpty)
+                  _ApprovalPill(icon: Icons.warning_amber, text: risk),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton.icon(
+                  onPressed: () => respond(true),
+                  icon: const Icon(Icons.check, size: 16),
+                  label: const Text('Approve'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () => respond(false),
+                  icon: const Icon(Icons.close, size: 16),
+                  label: const Text('Deny'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ApprovalPill extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _ApprovalPill({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(text, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
+    );
+  }
+}
+
 /// Compact centered chip for system notifications (e.g. "Stopped by user.").
 class _SystemChip extends StatelessWidget {
   final String text;
@@ -863,9 +1144,7 @@ class _SystemChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fgColor = isError
-        ? colorScheme.error
-        : colorScheme.onSurfaceVariant;
+    final fgColor = isError ? colorScheme.error : colorScheme.onSurfaceVariant;
     final bgColor = isError
         ? colorScheme.error.withValues(alpha: 0.08)
         : colorScheme.onSurfaceVariant.withValues(alpha: 0.08);
@@ -892,9 +1171,9 @@ class _SystemChip extends StatelessWidget {
               child: Text(
                 text,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: fgColor,
-                  fontStyle: FontStyle.italic,
-                ),
+                      color: fgColor,
+                      fontStyle: FontStyle.italic,
+                    ),
               ),
             ),
           ],

@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -75,7 +74,11 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
     // Check if clipboard has text — if so, let TextField handle it
     try {
       final textData = await Clipboard.getData(Clipboard.kTextPlain);
-      if (textData != null && textData.text != null && textData.text!.isNotEmpty) return;
+      if (textData != null &&
+          textData.text != null &&
+          textData.text!.isNotEmpty) {
+        return;
+      }
     } catch (_) {}
 
     // Try reading image from clipboard via pasteboard package
@@ -107,7 +110,9 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
     final batchId = DateTime.now().microsecondsSinceEpoch.toString();
     final total = _pendingImages.length;
     final images = List<Uint8List>.from(_pendingImages);
-    setState(() { _pendingImages.clear(); });
+    setState(() {
+      _pendingImages.clear();
+    });
 
     var idx = 0;
     for (final source in images) {
@@ -115,17 +120,28 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
       final name = 'clipboard_$idx.png';
       final cmp = await compressIfNeeded(source);
       final bytes = cmp.bytes;
-      if (bytes.length > maxBytes) { store?.fail(name, 'too large'); continue; }
+      if (bytes.length > maxBytes) {
+        store?.fail(name, 'too large');
+        continue;
+      }
       final preview = await makePreviewBase64(bytes);
       if (!mounted) return;
       var canceled = false;
       VoidCallback? cancelNetwork;
-      store?.start(name, bytes.length, onCancel: () { canceled = true; cancelNetwork?.call(); });
+      store?.start(name, bytes.length, onCancel: () {
+        canceled = true;
+        cancelNetwork?.call();
+      });
       await repo.uploadFile(
-        name, bytes,
+        name,
+        bytes,
         mime: cmp.mime,
-        onProgress: (s, t) { if (!canceled) store?.progress(name, s, t); },
-        onCreateCancel: (fn) { cancelNetwork = fn; },
+        onProgress: (s, t) {
+          if (!canceled) store?.progress(name, s, t);
+        },
+        onCreateCancel: (fn) {
+          cancelNetwork = fn;
+        },
         previewBase64: preview,
         batchId: batchId,
         batchSize: total,
@@ -202,18 +218,29 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
       if (source == null) continue;
       final cmp = await compressIfNeeded(source);
       final bytes = cmp.bytes;
-      if (bytes.length > maxBytes) { store?.fail(name, 'too large'); continue; }
+      if (bytes.length > maxBytes) {
+        store?.fail(name, 'too large');
+        continue;
+      }
       final preview = await makePreviewBase64(bytes);
       if (!mounted) return;
       var canceled = false;
       VoidCallback? cancelNetwork;
-      store?.start(name, bytes.length, onCancel: () { canceled = true; cancelNetwork?.call(); }, previewBytes: bytes.length > 2 * 1024 * 1024 ? null : bytes);
+      store?.start(name, bytes.length, onCancel: () {
+        canceled = true;
+        cancelNetwork?.call();
+      }, previewBytes: bytes.length > 2 * 1024 * 1024 ? null : bytes);
       final mime = cmp.mime;
       await repo.uploadFile(
-        name, bytes,
+        name,
+        bytes,
         mime: mime,
-        onProgress: (s, t) { if (!canceled) store?.progress(name, s, t); },
-        onCreateCancel: (fn) { cancelNetwork = fn; },
+        onProgress: (s, t) {
+          if (!canceled) store?.progress(name, s, t);
+        },
+        onCreateCancel: (fn) {
+          cancelNetwork = fn;
+        },
         previewBase64: preview,
         batchId: batchId,
         batchSize: total,
@@ -270,7 +297,8 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
                                 color: colorScheme.error,
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.close, size: 14, color: Colors.white),
+                              child: const Icon(Icons.close,
+                                  size: 14, color: Colors.white),
                             ),
                           ),
                         ),
@@ -317,108 +345,124 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
                           ),
                         ),
 
-                  // Text input with paste interception and Enter/Shift+Enter handling
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 0),
-                      child: Focus(
-                        onKeyEvent: (node, event) {
-                          if (event is! KeyDownEvent) return KeyEventResult.ignored;
-                          // Intercept Cmd+V / Ctrl+V for image paste
-                          if (event.logicalKey == LogicalKeyboardKey.keyV &&
-                              (HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed)) {
-                            _handlePaste();
-                            return KeyEventResult.ignored; // let TextField paste text too
-                          }
-                          // Enter = send (consume event), Shift+Enter = newline (pass through)
-                          if (event.logicalKey == LogicalKeyboardKey.enter &&
-                              !HardwareKeyboard.instance.isShiftPressed) {
-                            _sendMessage();
-                            return KeyEventResult.handled; // prevent newline insertion
-                          }
-                          return KeyEventResult.ignored;
-                        },
-                        child: TextField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          minLines: 1,
-                          maxLines: 5,
-                          textInputAction: TextInputAction.newline,
-                          decoration: InputDecoration(
-                            hintText: 'Give me a task...',
-                            hintStyle: TextStyle(
-                              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      // Text input with paste interception and Enter/Shift+Enter handling
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 0),
+                          child: Focus(
+                            onKeyEvent: (node, event) {
+                              if (event is! KeyDownEvent) {
+                                return KeyEventResult.ignored;
+                              }
+                              // Intercept Cmd+V / Ctrl+V for image paste
+                              if (event.logicalKey == LogicalKeyboardKey.keyV &&
+                                  (HardwareKeyboard.instance.isMetaPressed ||
+                                      HardwareKeyboard
+                                          .instance.isControlPressed)) {
+                                _handlePaste();
+                                return KeyEventResult
+                                    .ignored; // let TextField paste text too
+                              }
+                              // Enter = send (consume event), Shift+Enter = newline (pass through)
+                              if (event.logicalKey ==
+                                      LogicalKeyboardKey.enter &&
+                                  !HardwareKeyboard.instance.isShiftPressed) {
+                                _sendMessage();
+                                return KeyEventResult
+                                    .handled; // prevent newline insertion
+                              }
+                              return KeyEventResult.ignored;
+                            },
+                            child: TextField(
+                              controller: controller,
+                              focusNode: focusNode,
+                              minLines: 1,
+                              maxLines: 5,
+                              textInputAction: TextInputAction.newline,
+                              decoration: InputDecoration(
+                                hintText: 'Give me a task...',
+                                hintStyle: TextStyle(
+                                  color: colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.6),
+                                ),
+                                border: InputBorder.none,
+                                contentPadding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                              ),
+                              style: TextStyle(
+                                color: colorScheme.onSurface,
+                                fontSize: 16,
+                              ),
                             ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                          style: TextStyle(
-                            color: colorScheme.onSurface,
-                            fontSize: 16,
                           ),
                         ),
                       ),
-                    ),
-                  ),
 
-                  // Right side buttons
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4, right: 4),
-                    child: Observer(
-                      builder: (_) {
-                        final store = context.read<ChatStore?>();
-                        final isRunning = store?.running ?? false;
-                        if (isRunning) {
-                          return IconButton(
-                            onPressed: _stopGeneration,
-                            icon: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: colorScheme.error,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.stop_rounded, color: Colors.white, size: 20),
-                            ),
-                            tooltip: 'Stop generation',
-                          );
-                        } else if (_hasContent) {
-                          final keyOk = _hasApiKey;
-                          return Tooltip(
-                            message: keyOk ? 'Send message' : _missingKeyMessage,
-                            child: IconButton(
-                              onPressed: keyOk ? _sendMessage : null,
-                              icon: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: keyOk
-                                      ? colorScheme.primary
-                                      : colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                                  shape: BoxShape.circle,
+                      // Right side buttons
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4, right: 4),
+                        child: Observer(
+                          builder: (_) {
+                            final store = context.read<ChatStore?>();
+                            final isRunning = store?.running ?? false;
+                            if (isRunning) {
+                              return IconButton(
+                                onPressed: _stopGeneration,
+                                icon: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.error,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.stop_rounded,
+                                      color: Colors.white, size: 20),
                                 ),
-                                child: Icon(
-                                  Icons.arrow_upward_rounded,
-                                  color: keyOk ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
-                                  size: 20,
+                                tooltip: 'Stop generation',
+                              );
+                            } else if (_hasContent) {
+                              final keyOk = _hasApiKey;
+                              return Tooltip(
+                                message:
+                                    keyOk ? 'Send message' : _missingKeyMessage,
+                                child: IconButton(
+                                  onPressed: keyOk ? _sendMessage : null,
+                                  icon: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: keyOk
+                                          ? colorScheme.primary
+                                          : colorScheme.onSurfaceVariant
+                                              .withValues(alpha: 0.3),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.arrow_upward_rounded,
+                                      color: keyOk
+                                          ? colorScheme.onPrimary
+                                          : colorScheme.onSurfaceVariant,
+                                      size: 20,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                          );
-                        } else {
-                          return IconButton(
-                            onPressed: () {
-                              launchUrl(Uri.parse('https://voicetext.site/'));
-                            },
-                            icon: Icon(Icons.mic_none_outlined, color: colorScheme.onSurfaceVariant),
-                            tooltip: 'Voice input',
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              );
-              },
-            ),
+                              );
+                            } else {
+                              return IconButton(
+                                onPressed: () {
+                                  launchUrl(
+                                      Uri.parse('https://voicetext.site/'));
+                                },
+                                icon: Icon(Icons.mic_none_outlined,
+                                    color: colorScheme.onSurfaceVariant),
+                                tooltip: 'Voice input',
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
 
             // ── Hotkey hint when agent is running ──
@@ -432,7 +476,8 @@ class _ChatInputComposerState extends State<ChatInputComposer> {
                       'Press Ctrl+Esc to stop the agent (works globally)',
                       style: TextStyle(
                         fontSize: 11,
-                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                        color:
+                            colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                       ),
                     ),
                   );

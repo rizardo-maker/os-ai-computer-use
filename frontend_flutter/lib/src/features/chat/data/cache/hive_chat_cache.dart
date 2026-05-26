@@ -97,7 +97,9 @@ class HiveChatCache implements ChatCache {
         // Delete associated screenshot file
         final v = b.get(key);
         if (v is Map) {
-          try { ChatMessageMapper.deleteScreenshot(v); } catch (_) {}
+          try {
+            ChatMessageMapper.deleteScreenshot(v);
+          } catch (_) {}
         }
         keysToDelete.add(key);
       }
@@ -105,5 +107,3 @@ class HiveChatCache implements ChatCache {
     await b.deleteAll(keysToDelete);
   }
 }
-
-

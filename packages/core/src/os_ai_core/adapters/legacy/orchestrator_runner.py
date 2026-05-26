@@ -8,8 +8,11 @@ import httpx
 
 from os_ai_llm.interfaces import LLMClient
 from os_ai_llm.types import ImagePart, Message, TextPart, ToolCall, ToolDescriptor
+from os_ai_core.application.ports.approval import ApprovalPort
+from os_ai_core.application.ports.tools import ToolExecutionContext, ToolGateway
+from os_ai_core.application.services.provider_safety import STOP_AGENT_LOOP_META, approve_provider_safety_checks
 from os_ai_core.config import LOGGER_NAME, USAGE_LOG_EACH_ITERATION
-from os_ai_core.tools.registry import ToolRegistry
+from os_ai_core.domain.tools.models import ToolRisk
 from os_ai_core.utils.costs import estimate_cost
 
 
@@ -22,9 +25,17 @@ class LegacyRunResult:
 
 
 class LegacyOrchestratorRunner:
-    def __init__(self, client: LLMClient, tools: ToolRegistry) -> None:
+    def __init__(
+        self,
+        client: LLMClient,
+        tools: ToolGateway,
+        approval: ApprovalPort | None = None,
+        job_id: str = "legacy-orchestrator-run",
+    ) -> None:
         self._client = client
         self._tools = tools
+        self._approval = approval
+        self._job_id = job_id
         self._logger = logging.getLogger(LOGGER_NAME)
 
     def run(
@@ -43,6 +54,7 @@ class LegacyOrchestratorRunner:
         provider_context = initial_provider_context
         total_input_tokens = 0
         total_output_tokens = 0
+        tool_risks = self._tool_risks_by_name(tool_descriptors)
 
         for iteration in range(max_iterations):
             if self._is_cancelled(cancel_token):
@@ -78,14 +90,37 @@ class LegacyOrchestratorRunner:
             if not response.tool_calls:
                 break
 
+            stop_requested = False
             for call in response.tool_calls:
                 if self._is_cancelled(cancel_token):
+                    stop_requested = True
                     break
                 self._emit_tool_call(on_event, call)
-                result = self._tools.execute(self._legacy_registry_call(call), cancel_token=cancel_token)
-                result.metadata.update(call.metadata)
+                safety_denial = approve_provider_safety_checks(
+                    job_id=self._job_id,
+                    tool_call=call,
+                    risk=self._risk_for(call, tool_risks.get(call.name)),
+                    approval=self._approval,
+                )
+                if safety_denial is not None:
+                    result = safety_denial
+                else:
+                    result = self._tools.execute(
+                        call,
+                        ToolExecutionContext(
+                            job_id=self._job_id,
+                            cancel_token=cancel_token,
+                            approval=self._approval,
+                        ),
+                    )
                 self._emit_tool_result(on_event, result)
+                if result.metadata.get(STOP_AGENT_LOOP_META) is True:
+                    stop_requested = True
+                    break
                 messages.append(self._client.format_tool_result(result))
+
+            if stop_requested:
+                break
 
         return LegacyRunResult(
             messages=messages,
@@ -93,11 +128,6 @@ class LegacyOrchestratorRunner:
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
         )
-
-    def _legacy_registry_call(self, call: ToolCall) -> ToolCall:
-        if not call.metadata:
-            return call
-        return ToolCall(id=call.id, name=call.name, args={**call.args, **call.metadata}, metadata=call.metadata)
 
     def _emit_tool_call(self, on_event: Callable[[str, dict[str, Any]], None] | None, call: ToolCall) -> None:
         actions = call.metadata.get("_openai_actions")
@@ -197,6 +227,25 @@ class LegacyOrchestratorRunner:
             return self._client.get_model_name()
         except Exception:
             return "unknown"
+
+    def _tool_risks_by_name(self, tools: list[ToolDescriptor]) -> dict[str, ToolRisk]:
+        risks: dict[str, ToolRisk] = {}
+        for descriptor in tools:
+            raw = descriptor.params.get("risk")
+            if not raw:
+                continue
+            try:
+                risks[descriptor.name] = ToolRisk(str(raw))
+            except Exception:
+                continue
+        return risks
+
+    def _risk_for(self, call: ToolCall, catalog_risk: ToolRisk | None) -> ToolRisk:
+        raw = call.metadata.get("risk")
+        try:
+            return ToolRisk(str(raw)) if raw else (catalog_risk or ToolRisk.LOCAL_MUTATION)
+        except Exception:
+            return catalog_risk or ToolRisk.LOCAL_MUTATION
 
     def _safe_emit(
         self,

@@ -49,7 +49,8 @@ class AppRoot extends StatelessWidget {
           body: TextStyle(fontSize: 14, height: 1.35),
           bodySmall: TextStyle(fontSize: 12, height: 1.30),
           caption: TextStyle(fontSize: 11, height: 1.25),
-          labelSmall: TextStyle(fontSize: 10, height: 1.20, fontWeight: FontWeight.w600),
+          labelSmall: TextStyle(
+              fontSize: 10, height: 1.20, fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -85,7 +86,8 @@ class AppRoot extends StatelessWidget {
           body: TextStyle(fontSize: 14, height: 1.35),
           bodySmall: TextStyle(fontSize: 12, height: 1.30),
           caption: TextStyle(fontSize: 11, height: 1.25),
-          labelSmall: TextStyle(fontSize: 10, height: 1.20, fontWeight: FontWeight.w600),
+          labelSmall: TextStyle(
+              fontSize: 10, height: 1.20, fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -101,7 +103,8 @@ class AppRoot extends StatelessWidget {
             Provider(create: (_) => BackendWsClient()),
             Provider(create: (_) => BackendRestClient()),
             Provider<ChatCache>(create: (_) => HiveChatCache()),
-            ProxyProvider3<AppConfig, BackendWsClient, BackendRestClient, ChatRepository>(
+            ProxyProvider3<AppConfig, BackendWsClient, BackendRestClient,
+                ChatRepository>(
               update: (_, cfg, ws, rest, prev) {
                 rest.baseUrl = cfg.restBase();
                 rest.bearer = cfg.token;
@@ -115,7 +118,7 @@ class AppRoot extends StatelessWidget {
               },
             ),
             ProxyProvider2<ChatRepository, ChatCache, ChatStore>(
-              update: (_, repo, cache, prev) => prev ?? ChatStore(repo, cache: cache),
+              update: (_, repo, cache, prev) => prev ?? ChatStore(repo, cache),
             ),
           ],
           child: child ?? const SizedBox.shrink(),

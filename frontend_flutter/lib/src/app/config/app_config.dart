@@ -67,7 +67,8 @@ class AppConfig extends ChangeNotifier {
       this.token = token;
       changed = true;
     }
-    if (historyPairsLimit != null && historyPairsLimit != this.historyPairsLimit) {
+    if (historyPairsLimit != null &&
+        historyPairsLimit != this.historyPairsLimit) {
       this.historyPairsLimit = historyPairsLimit;
       changed = true;
     }
@@ -90,5 +91,3 @@ class AppConfig extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 }
-
-

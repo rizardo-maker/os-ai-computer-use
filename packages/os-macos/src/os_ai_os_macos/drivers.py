@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 
 import pyautogui
 
+from os_ai_os.config import PYAUTO_FAILSAFE, PYAUTO_PAUSE_SECONDS
 from os_ai_os.platform.drivers import PlatformDrivers
 from os_ai_os.ports.mouse import Mouse
 from os_ai_os.ports.keyboard import Keyboard
@@ -16,6 +17,9 @@ from os_ai_os.ports.types import Capabilities, Size
 from .keyboard import press_enter_mac
 from .overlay import highlight_position, process_overlay_events
 from .sound import play_click_sound, play_done_sound
+
+pyautogui.PAUSE = PYAUTO_PAUSE_SECONDS
+pyautogui.FAILSAFE = PYAUTO_FAILSAFE
 
 
 def _normalize_combo_keys(keys: Tuple[str, ...]) -> Tuple[str, ...]:
@@ -62,6 +66,10 @@ def _normalize_combo_keys(keys: Tuple[str, ...]) -> Tuple[str, ...]:
 
 
 class DarwinMouse:
+    def position(self) -> Tuple[int, int]:
+        x, y = pyautogui.position()
+        return int(x), int(y)
+
     def move_to(self, x: int, y: int, *, duration_ms: int = 0) -> None:
         dur = max(0.0, float(duration_ms) / 1000.0)
         pyautogui.moveTo(int(x), int(y), duration=dur)
@@ -123,6 +131,16 @@ class DarwinKeyboard:
                 pyautogui.press(norm[0])
             return
         pyautogui.hotkey(*norm)
+
+    def key_down(self, key: str) -> None:
+        norm = _normalize_combo_keys((key,))
+        if norm:
+            pyautogui.keyDown(norm[0])
+
+    def key_up(self, key: str) -> None:
+        norm = _normalize_combo_keys((key,))
+        if norm:
+            pyautogui.keyUp(norm[0])
 
     def type_text(self, text: str, *, wpm: int = 180) -> None:
         interval = 0.02
@@ -204,5 +222,4 @@ def make_drivers() -> PlatformDrivers:
         sound=DarwinSound(),
         capabilities=caps,
     )
-
 

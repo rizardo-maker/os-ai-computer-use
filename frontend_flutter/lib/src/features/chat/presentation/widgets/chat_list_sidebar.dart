@@ -29,39 +29,45 @@ class ChatListSidebar extends StatelessWidget {
       width: width ?? 280,
       decoration: showBorder
           ? BoxDecoration(
-              color: Theme.of(context).colorScheme.surface.withValues(alpha: bgAlpha),
-              border: Border(right: BorderSide(color: context.themeColors.surfaceBorder)),
+              color: Theme.of(context)
+                  .colorScheme
+                  .surface
+                  .withValues(alpha: bgAlpha),
+              border: Border(
+                  right: BorderSide(color: context.themeColors.surfaceBorder)),
             )
           : null,
       child: Column(
         children: [
           if (showHeader)
             Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Chats',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontWeight: FontWeight.w600,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Chats',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'New chat',
-                  onPressed: onCreateChat,
-                  icon: Icon(Icons.add, color: Theme.of(context).colorScheme.onSurface),
-                ),
-                IconButton(
-                  tooltip: 'Usage',
-                  onPressed: onOpenUsage,
-                  icon: Icon(Icons.bar_chart_outlined, color: Theme.of(context).colorScheme.onSurface),
-                ),
-              ],
+                  IconButton(
+                    tooltip: 'New chat',
+                    onPressed: onCreateChat,
+                    icon: Icon(Icons.add,
+                        color: Theme.of(context).colorScheme.onSurface),
+                  ),
+                  IconButton(
+                    tooltip: 'Usage',
+                    onPressed: onOpenUsage,
+                    icon: Icon(Icons.bar_chart_outlined,
+                        color: Theme.of(context).colorScheme.onSurface),
+                  ),
+                ],
+              ),
             ),
-          ),
           Expanded(
             child: Observer(builder: (_) {
               final store = context.read<ChatStore?>();
@@ -69,7 +75,8 @@ class ChatListSidebar extends StatelessWidget {
               final active = store?.activeChatId;
               return ListView.separated(
                 itemCount: sessions.length,
-                separatorBuilder: (_, __) => Divider(height: 1, color: context.themeColors.surfaceBorder),
+                separatorBuilder: (_, __) => Divider(
+                    height: 1, color: context.themeColors.surfaceBorder),
                 itemBuilder: (_, i) {
                   final s = sessions[i];
                   final isActive = s.id == active;
@@ -140,18 +147,23 @@ class _ChatListItemState extends State<_ChatListItem> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface,
-                          fontWeight: widget.isActive ? FontWeight.w600 : null,
-                        ),
+                              color: Theme.of(context).colorScheme.onSurface,
+                              fontWeight:
+                                  widget.isActive ? FontWeight.w600 : null,
+                            ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        (s.lastMessageText ?? '').isEmpty ? '—' : s.lastMessageText!,
+                        (s.lastMessageText ?? '').isEmpty
+                            ? '—'
+                            : s.lastMessageText!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
                       ),
                     ],
                   ),
@@ -164,14 +176,18 @@ class _ChatListItemState extends State<_ChatListItem> {
                       Text(
                         '\$${s.totalUsd.toStringAsFixed(4)}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
                       ),
                       Text(
                         '${s.totalInputTokens + s.totalOutputTokens} tok',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
                       ),
                     ],
                   ),
@@ -188,10 +204,15 @@ class _ChatListItemState extends State<_ChatListItem> {
                         builder: (ctx) {
                           return AlertDialog(
                             title: const Text('Rename chat'),
-                            content: TextField(controller: controller, autofocus: true),
+                            content: TextField(
+                                controller: controller, autofocus: true),
                             actions: [
-                              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-                              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Save')),
+                              TextButton(
+                                  onPressed: () => Navigator.of(ctx).pop(false),
+                                  child: const Text('Cancel')),
+                              TextButton(
+                                  onPressed: () => Navigator.of(ctx).pop(true),
+                                  child: const Text('Save')),
                             ],
                           );
                         },
@@ -203,7 +224,9 @@ class _ChatListItemState extends State<_ChatListItem> {
                         }
                       }
                     },
-                    icon: Icon(Icons.edit, size: 18, color: Theme.of(context).colorScheme.onSurface),
+                    icon: Icon(Icons.edit,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurface),
                   ),
                   IconButton(
                     tooltip: 'Delete',
@@ -216,8 +239,12 @@ class _ChatListItemState extends State<_ChatListItem> {
                             title: const Text('Delete chat?'),
                             content: const Text('This cannot be undone.'),
                             actions: [
-                              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-                              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Delete')),
+                              TextButton(
+                                  onPressed: () => Navigator.of(ctx).pop(false),
+                                  child: const Text('Cancel')),
+                              TextButton(
+                                  onPressed: () => Navigator.of(ctx).pop(true),
+                                  child: const Text('Delete')),
                             ],
                           );
                         },
@@ -226,7 +253,8 @@ class _ChatListItemState extends State<_ChatListItem> {
                         widget.onDelete();
                       }
                     },
-                    icon: Icon(Icons.delete_outline, size: 18, color: Theme.of(context).colorScheme.error),
+                    icon: Icon(Icons.delete_outline,
+                        size: 18, color: Theme.of(context).colorScheme.error),
                   ),
                 ],
               ],
@@ -237,5 +265,3 @@ class _ChatListItemState extends State<_ChatListItem> {
     );
   }
 }
-
-

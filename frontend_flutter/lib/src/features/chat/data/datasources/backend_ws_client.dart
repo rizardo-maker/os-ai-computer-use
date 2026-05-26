@@ -44,7 +44,7 @@ class BackendWsClient {
         .asBroadcastStream();
     _mappedSub = _mapped!.listen((m) {
       // ignore: avoid_print
-      print('[WS] msg ' + ((m['method'] ?? m['id'] ?? 'unknown')).toString());
+      print('[WS] msg ${m['method'] ?? m['id'] ?? 'unknown'}');
       if (!_connectedOnce) {
         _connectedOnce = true;
         _addStatus(ConnectionStatus.connected);
@@ -77,8 +77,9 @@ class BackendWsClient {
         _addStatus(ConnectionStatus.connecting);
         final ms = (300 * (attempt + 1)).clamp(300, 30000);
         // ignore: avoid_print
-        print('[WS] reconnect attempt=${attempt + 1} backoffMs=' + ms.toString());
-        final ch = io.IOWebSocketChannel.connect(_lastUri!, pingInterval: const Duration(seconds: 10));
+        print('[WS] reconnect attempt=${attempt + 1} backoffMs=$ms');
+        final ch = io.IOWebSocketChannel.connect(_lastUri!,
+            pingInterval: const Duration(seconds: 10));
         _setupChannel(ch);
         break;
       } catch (_) {
@@ -113,13 +114,14 @@ class BackendWsClient {
       // Плагина может не быть (desktop dev). Игнорируем.
     }
     int attempt = 0;
-    const maxAttempts = 10;  // Prevent infinite loop
+    const maxAttempts = 10; // Prevent infinite loop
     while (_ch == null && attempt < maxAttempts) {
       try {
         _addStatus(ConnectionStatus.connecting);
         // ignore: avoid_print
         print('[WS] connecting... attempt=${attempt + 1}/$maxAttempts');
-        final ch = io.IOWebSocketChannel.connect(uri, pingInterval: const Duration(seconds: 10));
+        final ch = io.IOWebSocketChannel.connect(uri,
+            pingInterval: const Duration(seconds: 10));
         _setupChannel(ch);
         break;
       } catch (_) {
@@ -133,7 +135,7 @@ class BackendWsClient {
         final ms = (300 * attempt).clamp(300, 30 * 1000);
         _addStatus(ConnectionStatus.connecting);
         // ignore: avoid_print
-        print('[WS] connect retry after ' + ms.toString() + 'ms');
+        print('[WS] connect retry after ${ms}ms');
         await Future.delayed(Duration(milliseconds: ms));
       }
     }
@@ -174,5 +176,3 @@ class BackendWsClient {
 
   Stream<ConnectionStatus> connectionStatus() => _statusCtrl.stream;
 }
-
-

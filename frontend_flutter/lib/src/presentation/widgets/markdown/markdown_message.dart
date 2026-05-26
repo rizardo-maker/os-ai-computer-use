@@ -19,9 +19,8 @@ class MarkdownMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (text.isEmpty) return const SizedBox.shrink();
 
-    final fallbackColor = isUser
-        ? Colors.white
-        : Theme.of(context).colorScheme.onSurface;
+    final fallbackColor =
+        isUser ? Colors.white : Theme.of(context).colorScheme.onSurface;
 
     try {
       final config =
